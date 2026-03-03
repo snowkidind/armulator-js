@@ -23,7 +23,7 @@ export function isValidPath(path: string): boolean {
 
 // Extract coin type from BIP-44 path (m/44'/<coin>'/...).
 // Returns null if the path is not a BIP-44 path.
-function coinType(path: string): number | null {
+export function coinType(path: string): number | null {
   const m = path.match(/^m\/44'\/(\d+)'/)
   return m ? parseInt(m[1], 10) : null
 }
@@ -75,6 +75,29 @@ export interface AddressPool {
   evmIndexMap: Map<string, number>
   /** Cosmos address → derivation index, for O(1) membership + tier check. */
   cosmosIndexMap: Map<string, number>
+}
+
+/**
+ * Number of addresses derived per batch. Initial pool and each expansion
+ * are always a multiple of this value.
+ */
+export const POOL_BATCH_SIZE = 125
+
+/**
+ * Expand an existing pool in-place to cover at least minSize indices.
+ * Always expands to the next POOL_BATCH_SIZE boundary so expansions are
+ * amortised — a request for index 126 grows the pool to 250, not 127.
+ */
+export function expandPool(pool: AddressPool, mnemonic: string, minSize: number): void {
+  const newSize = Math.ceil(minSize / POOL_BATCH_SIZE) * POOL_BATCH_SIZE
+  for (let i = pool.evm.length; i < newSize; i++) {
+    const evmAddr    = deriveEvm(mnemonic,    `m/44'/60'/0'/0/${i}`)
+    const cosmosAddr = deriveCosmos(mnemonic, `m/44'/118'/0'/0/${i}`, 'cosmos1')
+    pool.evm.push(evmAddr)
+    pool.cosmos.push(cosmosAddr)
+    pool.evmIndexMap.set(evmAddr.toLowerCase(), i)
+    pool.cosmosIndexMap.set(cosmosAddr, i)
+  }
 }
 
 /**

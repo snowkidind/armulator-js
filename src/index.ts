@@ -37,7 +37,7 @@ const { logger }                               = await import('./logger.js')
 const { loadOrInitMnemonic, FatalMnemonicError, rekeyMnemonic, MNEMONIC_FILE } = await import('./mnemonic.js')
 const { startServer }                          = await import('./server.js')
 const { parseCommand, ok, err }                = await import('./protocol.js')
-const { deriveAddress, buildAddressPool, isValidPath } = await import('./derivation.js')
+const { deriveAddress, buildAddressPool, expandPool, isValidPath, coinType, pathIndex } = await import('./derivation.js')
 const { validatePolicy }                       = await import('./policy.js')
 const { getCategory, checkPolicy, isValidHash, isValidDestination, signHash } = await import('./signer.js')
 
@@ -179,7 +179,7 @@ async function main(): Promise<void> {
   }
 
   if (mnemonic) {
-    const poolSize = parseInt(process.env.ARMORY_POOL_SIZE ?? '10000', 10)
+    const poolSize = parseInt(process.env.ARMORY_POOL_SIZE ?? '125', 10)
     pool = buildAddressPool(mnemonic, poolSize)
     logger.info(`address pool ready (${pool.evm.length} EVM, ${pool.cosmos.length} Cosmos)`)
   }
@@ -220,11 +220,17 @@ async function main(): Promise<void> {
       case 'derive': {
         const [path] = args
         if (!path || !isValidPath(path)) return err('invalid command')
-        try {
-          return ok(deriveAddress(mnemonic, path))
-        } catch {
-          return err('invalid command')
+        const coin = coinType(path)
+        const idx  = pathIndex(path)
+        if (coin === 60) {
+          if (idx >= pool!.evm.length) expandPool(pool!, mnemonic, idx + 1)
+          return ok(pool!.evm[idx])
         }
+        if (coin === 118) {
+          if (idx >= pool!.cosmos.length) expandPool(pool!, mnemonic, idx + 1)
+          return ok(pool!.cosmos[idx])
+        }
+        return err('invalid command')
       }
 
       case 'sign': {
