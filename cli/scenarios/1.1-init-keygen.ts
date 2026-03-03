@@ -5,11 +5,8 @@
  *   - `armory init` generates a 32-byte (64 hex char) ARMORY_KEY in .env
  *   - Running `armory init` again refuses to overwrite the existing entry
  */
-import fs   from 'node:fs'
-import path from 'node:path'
-import { assert, runCommand, wipeKeys, ARMORY_ROOT } from './_harness.js'
-
-const ENV_PATH = path.join(ARMORY_ROOT, '.env')
+import fs from 'node:fs'
+import { assert, runCommand, wipeKeys, ENV_PATH } from './_harness.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

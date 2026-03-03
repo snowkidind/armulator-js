@@ -32,9 +32,9 @@ import { HDNodeWallet }         from 'ethers'
 const __filename   = fileURLToPath(import.meta.url)
 const __dirname    = path.dirname(__filename)
 export const ARMORY_ROOT = path.resolve(__dirname, '../..')
-export const KEYS_DIR    = path.join(ARMORY_ROOT, '.keys')
-export const ENV_PATH    = path.join(ARMORY_ROOT, '.env')
-export const SOCKET_PATH = '/tmp/armory.sock'
+export const KEYS_DIR    = '/tmp/armory-test-keys'   // isolated from production .keys/
+export const ENV_PATH    = '/tmp/armory-test.env'    // isolated from production .env
+export const SOCKET_PATH = '/tmp/armory-test.sock'   // isolated from production /tmp/armory.sock
 
 // ── Test constants ────────────────────────────────────────────────────────────
 
@@ -164,6 +164,7 @@ export function wipeKeys(): void {
   if (fs.existsSync(KEYS_DIR)) {
     fs.rmSync(KEYS_DIR, { recursive: true, force: true })
   }
+  try { fs.unlinkSync(ENV_PATH) } catch {}
 }
 
 export function startArmoryProcess(opts: StartOptions = {}): ChildProcess {
@@ -179,7 +180,8 @@ export function startArmoryProcess(opts: StartOptions = {}): ChildProcess {
     ARMORY_NO_DOTENV:   '1',
     ARMORY_LOG_LEVEL:   logLevel,
     ARMORY_SOCKET_PATH: SOCKET_PATH,
-    ARMORY_POOL_SIZE:   '200',   // enough for system (0–99) + user accounts in tests
+    ARMORY_KEYS_DIR:    KEYS_DIR,
+    ARMORY_ENV_PATH:    ENV_PATH,
     ...env,
   }
 
@@ -265,6 +267,8 @@ export function runCommand(
     const childEnv: Record<string, string> = {
       ...process.env as Record<string, string>,
       ARMORY_NO_DOTENV: '1',
+      ARMORY_KEYS_DIR:  KEYS_DIR,
+      ARMORY_ENV_PATH:  ENV_PATH,
       ...opts.env,
     }
 

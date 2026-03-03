@@ -11,8 +11,10 @@
  *   ARMORY_SOCKET_PATH  — unix socket path (default: /tmp/armory.sock)
  *   ARMORY_LOG_LEVEL    — debug | info | none  (default: info)
  *   ARMORY_MNEMONIC     — import phrase instead of generating (used during init or by tests)
- *   ARMORY_POOL_SIZE    — number of indices to pre-derive (default: 10000)
+ *   ARMORY_POOL_SIZE    — number of indices to pre-derive (default: 125)
  *   ARMORY_NO_DOTENV    — set to 1 to skip .env loading (used by tests)
+ *   ARMORY_KEYS_DIR     — directory for mnemonic.enc (default: .keys/ next to package root)
+ *   ARMORY_ENV_PATH     — path to .env file for init/rekey writes (default: .env next to package root)
  */
 import dotenv            from 'dotenv'
 import crypto            from 'node:crypto'
@@ -25,7 +27,7 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 const PKG_ROOT   = path.resolve(__dirname, '..')
-const ENV_PATH   = path.join(PKG_ROOT, '.env')
+const ENV_PATH   = process.env.ARMORY_ENV_PATH ?? path.join(PKG_ROOT, '.env')
 
 if (!process.env.ARMORY_NO_DOTENV) {
   dotenv.config({ path: ENV_PATH })
