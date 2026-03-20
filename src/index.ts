@@ -74,8 +74,9 @@ async function runInit(): Promise<void> {
   console.log('ARMORY_KEY generated and written to .env')
 
   // Generate or import the mnemonic during init — start will be read-only.
+  let mnemonic: string
   try {
-    await loadOrInitMnemonic(key)
+    mnemonic = await loadOrInitMnemonic(key)
   } catch (e: unknown) {
     console.error(`Failed to create mnemonic: ${e instanceof Error ? e.message : String(e)}`)
     process.exit(1)
@@ -83,6 +84,12 @@ async function runInit(): Promise<void> {
 
   const action = process.env.ARMORY_MNEMONIC ? 'imported' : 'generated'
   console.log(`mnemonic ${action} and stored in .keys/mnemonic.enc`)
+
+  // Derive and print the hotserv pairing key so it can be copied to hotserv/.env
+  const { HDNodeWallet } = await import('ethers')
+  const pairingWallet    = HDNodeWallet.fromPhrase(mnemonic, '', "m/44'/60'/0'/0/255")
+  console.log(`\nHOTSERV_PAIRING_KEY=${pairingWallet.privateKey}`)
+  console.log('Add the above line to hotserv/.env')
 }
 
 // ── CLI: rekey ────────────────────────────────────────────────────────────────
