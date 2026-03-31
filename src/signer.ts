@@ -26,6 +26,7 @@ type ActionCategory = 'auth' | 'transfer' | 'withdrawal'
 const ACTION_WHITELIST = new Map<string, ActionCategory>([
   // ── Hyperliquid ───────────────────────────────────────────────────────────
   ['approveAgent',              'auth'      ],  // authorize ephemeral agent key
+  ['deposit',                   'auth'      ],  // move USDC from wallet to exchange margin (paperdex)
   ['usdSend',                   'transfer'  ],  // USDC peer-to-peer on HL L2
   ['spotSend',                  'transfer'  ],  // spot token (HYPE, etc.) peer-to-peer on HL L2
   ['withdraw3',                 'withdrawal'],  // USDC or spot token from HL L2 → external L1 address (Arbitrum, Solana, etc.); one action type covers all assets
@@ -33,6 +34,9 @@ const ACTION_WHITELIST = new Map<string, ActionCategory>([
   ['transfer',                  'transfer'  ],  // ERC-20 or native send to internal address
   ['evmWithdraw',               'withdrawal'],  // ERC-20 or native send to external whitelist
   // ── dYdX / Cosmos ─────────────────────────────────────────────────────────
+  ['registerAccount',           'auth'      ],  // dYdX agent registration (ETH personal_sign)
+  ['transferOut',               'transfer'  ],  // dYdX USDC transfer to another account
+  ['withdraw',                  'withdrawal'],  // dYdX withdraw to own address
   ['AddAuthenticator',          'auth'      ],  // register permissioned trading key
   ['RemoveAuthenticator',       'auth'      ],  // revoke permissioned trading key
   ['MsgTransfer',               'transfer'  ],  // transfer between accounts on-chain
