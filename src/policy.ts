@@ -25,6 +25,9 @@ function isValidWhitelistEntry(addr: string): boolean {
 // ── Hardcoded defaults — edit for production deployment ───────────────────────
 
 const EXTERNAL_WHITELIST_DEFAULT: string[] = [
+  // Hyperliquid mainnet bridge2 contract on Arbitrum.
+  // Receives USDC for HL margin credits via evmWithdraw action.
+  '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7',
   // '0xYourHotWithdrawalWalletAddress',
 ]
 
