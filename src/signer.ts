@@ -26,6 +26,7 @@ type ActionCategory = 'auth' | 'transfer' | 'withdrawal'
 const ACTION_WHITELIST = new Map<string, ActionCategory>([
   // ── Hyperliquid ───────────────────────────────────────────────────────────
   ['approveAgent',              'auth'      ],  // authorize ephemeral agent key
+  ['userSetAbstraction',        'auth'      ],  // master sets self / agent abstraction mode (default ↔ unifiedAccount ↔ portfolioMargin)
   ['deposit',                   'auth'      ],  // move USDC from wallet to exchange margin (paperdex)
   ['usdSend',                   'transfer'  ],  // USDC peer-to-peer on HL L2
   ['spotSend',                  'transfer'  ],  // spot token (HYPE, etc.) peer-to-peer on HL L2
