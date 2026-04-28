@@ -255,10 +255,13 @@ async function main(): Promise<void> {
         let destination: string | null = null
         let hashHex: string
 
-        if (category === 'auth') {
+        if (category === 'auth' || category === 'internal') {
+          // No destination: routing target is implicit (auth = no fund move,
+          // internal = signer's own account, recovered from signature).
           if (rest.length !== 1) return err('invalid command')
           hashHex = rest[0]
         } else {
+          // transfer / withdrawal: explicit destination + hash.
           if (rest.length !== 2) return err('invalid command')
           destination = rest[0]
           hashHex     = rest[1]
