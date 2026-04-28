@@ -3,6 +3,10 @@
  *
  * Action categories:
  *   auth       — no destination (approveAgent, AddAuthenticator, etc.)
+ *   internal   — no destination, but funds move within the signer's own
+ *                account (e.g. HL usdClassTransfer between perps↔spot
+ *                ledgers). Routing target is the signer itself, recovered
+ *                from the signature; nothing for the policy to validate.
  *   transfer   — destination must be in internal pool; index tier applies
  *   withdrawal — destination must be in external whitelist
  *
@@ -21,7 +25,7 @@ import type { AddressPool }                  from './derivation.js'
 
 // ── Action type whitelist ─────────────────────────────────────────────────────
 
-type ActionCategory = 'auth' | 'transfer' | 'withdrawal'
+type ActionCategory = 'auth' | 'internal' | 'transfer' | 'withdrawal'
 
 const ACTION_WHITELIST = new Map<string, ActionCategory>([
   // ── Hyperliquid ───────────────────────────────────────────────────────────
@@ -29,6 +33,7 @@ const ACTION_WHITELIST = new Map<string, ActionCategory>([
   ['userSetAbstraction',        'auth'      ],  // master sets self / agent abstraction mode (default ↔ unifiedAccount ↔ portfolioMargin)
   ['deposit',                   'auth'      ],  // move USDC from wallet to exchange margin (paperdex)
   ['usdSend',                   'transfer'  ],  // USDC peer-to-peer on HL L2
+  ['usdClassTransfer',          'internal'  ],  // USDC perps↔spot within signer's own account (no destination)
   ['spotSend',                  'transfer'  ],  // spot token (HYPE, etc.) peer-to-peer on HL L2
   ['withdraw3',                 'withdrawal'],  // USDC or spot token from HL L2 → external L1 address (Arbitrum, Solana, etc.); one action type covers all assets
   // ── EVM on-chain (any chain) ──────────────────────────────────────────────
@@ -95,7 +100,8 @@ export function checkPolicy(
   const category = getCategory(actionType)
   if (!category) return false
 
-  if (category === 'auth') return destination === null
+  if (category === 'auth')     return destination === null
+  if (category === 'internal') return destination === null
 
   if (destination === null) return false
 
