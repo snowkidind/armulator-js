@@ -24,11 +24,16 @@ function isValidWhitelistEntry(addr: string): boolean {
 
 // ── Hardcoded defaults — edit for production deployment ───────────────────────
 
+const extraWhitelist = process.env.EXTERNAL_WHITELIST_ADDRESS_01
+if (!extraWhitelist) {
+  throw new Error('EXTERNAL_WHITELIST_ADDRESS_01 not set in .env')
+}
+
 const EXTERNAL_WHITELIST_DEFAULT: string[] = [
   // Hyperliquid mainnet bridge2 contract on Arbitrum.
   // Receives USDC for HL margin credits via evmWithdraw action.
   '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7',
-  // '0xYourHotWithdrawalWalletAddress',
+  extraWhitelist,
 ]
 
 const DRAIN_ADDRESS_DEFAULT: string = ''
