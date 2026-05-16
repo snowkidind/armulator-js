@@ -16,6 +16,12 @@
  *   ARMORY_KEYS_DIR     — directory for mnemonic.enc (default: .keys/ next to package root)
  *   ARMORY_ENV_PATH     — path to .env file for init/rekey writes (default: .env next to package root)
  */
+
+// Pin process TZ to UTC — pg-node serializes Date params using the host's
+// local TZ, which silently shifts `timestamp without time zone` SQL params
+// off by the host offset (paperserv/get_kline_minute round-trip bug 2026-05-16).
+process.env.TZ = 'UTC'
+
 import dotenv            from 'dotenv'
 import crypto            from 'node:crypto'
 import fs                from 'node:fs'
