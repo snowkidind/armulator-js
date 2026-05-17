@@ -232,6 +232,13 @@ async function main(): Promise<void> {
       case 'status':
         return ok('ready')
 
+      case 'noop':
+        // Liveness primitive. Exercises pairing + framing + dispatch without
+        // doing any cryptographic work. Used by tradeserv's
+        // /internal/armory/health (via hotserv pass-through) for the
+        // webserv readiness probe.
+        return ok('alive')
+
       case 'derive': {
         const [path] = args
         if (!path || !isValidPath(path)) return err('invalid command')
