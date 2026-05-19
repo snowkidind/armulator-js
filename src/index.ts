@@ -26,6 +26,7 @@ import dotenv            from 'dotenv'
 import crypto            from 'node:crypto'
 import fs                from 'node:fs'
 import path              from 'node:path'
+import { execFileSync }  from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 // Resolve package root and load .env BEFORE importing any module that reads
@@ -301,6 +302,29 @@ async function main(): Promise<void> {
 
   await startServer(SOCKET_PATH, verifyPairing, dispatch)
   logger.info('armory ready')
+  notifySystemdReady()
+}
+
+// Inform systemd we're past the listen() barrier so units with
+// After=armory.service + Requires=armory.service don't get exec-started
+// while the socket is still being bound. No-op when not running under
+// a Type=notify systemd unit (NOTIFY_SOCKET unset — e.g. dev `iterm-start.sh`,
+// tests, direct `tsx src/index.ts`).
+//
+// We shell out to `systemd-notify --ready` instead of writing to
+// NOTIFY_SOCKET ourselves because node's net module only supports
+// SOCK_STREAM unix sockets and systemd's notify socket is SOCK_DGRAM.
+// The systemd-notify binary ships with every systemd install.
+function notifySystemdReady(): void {
+  if (!process.env.NOTIFY_SOCKET) return
+  try {
+    execFileSync('systemd-notify', ['--ready'], { stdio: 'ignore' })
+  } catch (err) {
+    // Fail loud per CLAUDE.md but do NOT exit — the daemon is
+    // functional, only systemd's view of "started" is degraded.
+    // Operator will see dependents waiting TimeoutStartSec.
+    logger.error(`systemd-notify --ready failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 main().catch(e => {
