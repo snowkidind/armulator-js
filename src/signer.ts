@@ -15,8 +15,8 @@
  *   Signing index 50+   → destination may be anywhere in internal pool
  *
  * Withdrawal rules (any signing index):
- *   Destination must be in external whitelist (ARMORY_EXTERNAL_WHITELIST or
- *   ARMORY_DRAIN_ADDRESS). Internal addresses are never valid withdrawal destinations.
+ *   Destination must be an internal pool address, or in the external whitelist
+ *   (ARMORY_EXTERNAL_WHITELIST / ARMORY_DRAIN_ADDRESS).
  */
 import { HDNodeWallet }                      from 'ethers'
 import { pathIndex }                         from './derivation.js'

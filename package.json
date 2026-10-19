@@ -2,10 +2,34 @@
   "name": "armory",
   "version": "0.1.0",
   "private": true,
+  "description": "A JavaScript emulator of the USB Armory hardware security module — mirrors its IPC protocol and security model so a system can be developed and tested without the physical device. For development and testing only; not a real HSM.",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "homepage": "https://github.com/snowkidind/armulator-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snowkidind/armulator-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snowkidind/armulator-js/issues"
+  },
+  "keywords": [
+    "usb-armory",
+    "hsm",
+    "emulator",
+    "bip39",
+    "bip32",
+    "secp256k1",
+    "signing",
+    "development"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
     "init": "tsx src/index.ts init",
+    "rekey": "tsx src/index.ts rekey",
     "cli": "tsx cli/index.ts"
   },
   "dependencies": {
