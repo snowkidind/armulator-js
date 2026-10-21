@@ -26,8 +26,7 @@
  * the mnemonic. See README → "Connecting your software".
  */
 import net    from 'node:net'
-import crypto from 'node:crypto'
-import { Wallet } from 'ethers'
+import { Wallet, Transaction, parseEther, parseUnits } from 'ethers'
 
 const SOCKET_PATH = process.env.ARMORY_SOCKET_PATH ?? '/tmp/armory.sock'
 
@@ -128,17 +127,29 @@ async function main(): Promise<void> {
   console.log('status ->', await client.send('status'))   // ok ready
   console.log('noop   ->', await client.send('noop'))      // ok alive
 
-  // 3. Derive an address from the internal pool (EVM index 0).
-  console.log('derive ->', await client.send('derive m/44\'/60\'/0\'/0/0'))
+  // 3. Derive addresses from the internal pool. Index 60 (tier 50–99) is a valid
+  //    transfer target for a staging signer (index 5, tier 0–49).
+  console.log('derive ->', await client.send("derive m/44'/60'/0'/0/0"))
+  const dest = (await client.send("derive m/44'/60'/0'/0/60")).slice(3)
 
-  // 4. A PERMITTED sign. `approveAgent` is an "auth" action: no destination,
-  //    just a signing path and a 32-byte hash (here, an arbitrary SHA-256).
-  const hash = crypto.createHash('sha256').update('reference-client demo').digest('hex')
-  console.log('sign   ->', await client.send(`sign m/44'/60'/0'/0/5 approveAgent ${hash}`))
+  // 4. A PERMITTED sign. The new wire form sends the UNSIGNED artifact, not a
+  //    digest: armory recomputes the signing hash from it and decodes the true
+  //    recipient from the same bytes. Here, a native EVM transfer to an internal
+  //    address. The reply is `ok <derivedSignerAddress> <signature130hex>` — a
+  //    real client MUST assert that address equals the expected signer before it
+  //    broadcasts anything.
+  const unsignedTx = Transaction.from({
+    to: dest, value: parseEther('0.01'), chainId: 42161, nonce: 0,
+    gasLimit: 21000n, maxFeePerGas: parseUnits('0.1', 'gwei'),
+    maxPriorityFeePerGas: parseUnits('0.1', 'gwei'), type: 2,
+  }).unsignedSerialized
+  const req = (artifact: unknown) => Buffer.from(JSON.stringify({ artifact }), 'utf8').toString('base64url')
+  const transferToken = req({ kind: 'evm-tx', unsignedTx })
+  console.log('sign   ->', await client.send(`sign m/44'/60'/0'/0/5 transfer ${transferToken}`))
 
-  // 5. A DENIED sign — an action type that isn't on the whitelist. The policy
+  // 5. A DENIED sign — an action type that isn't in the registry. The policy
   //    answers with a uniform `err sign request denied` (it never says why).
-  console.log('denied ->', await client.send(`sign m/44'/60'/0'/0/5 notARealAction ${hash}`))
+  console.log('denied ->', await client.send(`sign m/44'/60'/0'/0/5 notARealAction ${transferToken}`))
 
   client.close()
 }

@@ -49,15 +49,17 @@ const PHASES: Phase[] = [
       { key: '3.4', label: 'sign-transfer-high    — 50+ can transfer to any internal address',          file: '3.4-sign-transfer-high.ts'     },
       { key: '3.5', label: 'sign-withdrawal       — withdrawal to internal or whitelist; non-whitelist denied', file: '3.5-sign-withdrawal.ts'  },
       { key: '3.6', label: 'sign-withdraw-drain   — drain address whitelisted for any index',           file: '3.6-sign-withdraw-drain.ts'    },
-      { key: '3.7', label: 'sign-uniform-errors   — all rejections return err sign request denied',     file: '3.7-sign-uniform-errors.ts'    },
-      { key: '3.8', label: 'sign-hash-validation  — bad hash/dest format → err invalid command',        file: '3.8-sign-hash-validation.ts'   },
+      { key: '3.7', label: 'sign-uniform-errors   — all policy rejections return err sign request denied', file: '3.7-sign-uniform-errors.ts'    },
+      { key: '3.8', label: 'sign-input-validation — malformed token/path/artifact → err invalid command',  file: '3.8-sign-hash-validation.ts'   },
+      { key: '3.9', label: 'sign-destination-binding — issue #5 regression: CASE A/B flip to denied',       file: '3.9-sign-destination-binding.ts' },
+      { key: '3.10', label: 'sign-hl-binding       — HL recipient binding + actionType-spoof closure',      file: '3.10-sign-hl-binding.ts'       },
     ],
   },
   {
     num:   '4',
-    label: 'dYdX Support',
+    label: 'dYdX Support (binding deferred)',
     scenarios: [
-      { key: '4.1', label: 'sign-dydx-actions — all dYdX action types, EVM paths, correct policy', file: '4.1-sign-dydx-actions.ts' },
+      { key: '4.1', label: 'sign-dydx-actions — Cosmos/dYdX binding deferred: all actions fail closed', file: '4.1-sign-dydx-actions.ts' },
     ],
   },
   {

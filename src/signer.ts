@@ -1,58 +1,31 @@
 /**
- * Action type whitelist, destination policy, and hash signing.
+ * Destination policy and hash signing.
+ *
+ * The action whitelist and the per-action recompute/extract descriptors now live
+ * in `src/actions.ts`. This module owns the destination policy decision — now
+ * evaluated against the recipient EXTRACTED from the signed bytes (not a
+ * caller-supplied string) — and the raw hash signing.
  *
  * Action categories:
- *   auth       — no destination (approveAgent, AddAuthenticator, etc.)
- *   internal   — no destination, but funds move within the signer's own
- *                account (e.g. HL usdClassTransfer between perps↔spot
- *                ledgers). Routing target is the signer itself, recovered
- *                from the signature; nothing for the policy to validate.
- *   transfer   — destination must be in internal pool; index tier applies
- *   withdrawal — destination must be in external whitelist
+ *   auth       — no external recipient (approveAgent, AddAuthenticator, etc.)
+ *   internal   — no external recipient; funds move within the signer's own
+ *                account (e.g. HL usdClassTransfer between perps↔spot ledgers).
+ *   transfer   — recipient must be in the internal pool; index tier applies
+ *   withdrawal — recipient must be in the external whitelist / drain, or internal
  *
  * Transfer tier rules:
- *   Signing index 0–49  → destination must be in indices 50–99 (staging door)
- *   Signing index 50+   → destination may be anywhere in internal pool
+ *   Signing index 0–49  → recipient must be in indices 50–99 (staging door)
+ *   Signing index 50+   → recipient may be anywhere in internal pool
  *
  * Withdrawal rules (any signing index):
- *   Destination must be an internal pool address, or in the external whitelist
+ *   Recipient must be an internal pool address, or in the external whitelist
  *   (ARMORY_EXTERNAL_WHITELIST / ARMORY_DRAIN_ADDRESS).
  */
 import { HDNodeWallet }                      from 'ethers'
 import { pathIndex }                         from './derivation.js'
 import { getExternalWhitelist, getDrainAddress } from './policy.js'
 import type { AddressPool }                  from './derivation.js'
-
-// ── Action type whitelist ─────────────────────────────────────────────────────
-
-type ActionCategory = 'auth' | 'internal' | 'transfer' | 'withdrawal'
-
-const ACTION_WHITELIST = new Map<string, ActionCategory>([
-  // ── Hyperliquid ───────────────────────────────────────────────────────────
-  ['approveAgent',              'auth'      ],  // authorize ephemeral agent key
-  ['userSetAbstraction',        'auth'      ],  // master sets self / agent abstraction mode (default ↔ unifiedAccount ↔ portfolioMargin)
-  ['deposit',                   'auth'      ],  // move USDC from wallet to exchange margin (paperdex)
-  ['usdSend',                   'transfer'  ],  // USDC peer-to-peer on HL L2
-  ['usdClassTransfer',          'internal'  ],  // USDC perps↔spot within signer's own account (no destination)
-  ['spotSend',                  'transfer'  ],  // spot token (HYPE, etc.) peer-to-peer on HL L2
-  ['withdraw3',                 'withdrawal'],  // USDC or spot token from HL L2 → external L1 address (Arbitrum, Solana, etc.); one action type covers all assets
-  // ── EVM on-chain (any chain) ──────────────────────────────────────────────
-  ['transfer',                  'transfer'  ],  // ERC-20 or native send to internal address
-  ['evmWithdraw',               'withdrawal'],  // ERC-20 or native send to external whitelist
-  // ── dYdX / Cosmos ─────────────────────────────────────────────────────────
-  ['registerAccount',           'auth'      ],  // dYdX agent registration (ETH personal_sign)
-  ['transferOut',               'transfer'  ],  // dYdX USDC transfer to another account
-  ['withdraw',                  'withdrawal'],  // dYdX withdraw to own address
-  ['AddAuthenticator',          'auth'      ],  // register permissioned trading key
-  ['RemoveAuthenticator',       'auth'      ],  // revoke permissioned trading key
-  ['MsgTransfer',               'transfer'  ],  // transfer between accounts on-chain
-  ['MsgSend',                   'transfer'  ],  // native token send (gas distribution)
-  ['MsgWithdrawFromSubaccount', 'withdrawal'],  // withdraw from dYdX subaccount
-])
-
-export function getCategory(actionType: string): ActionCategory | null {
-  return ACTION_WHITELIST.get(actionType) ?? null
-}
+import type { ActionCategory, Recipient }   from './actions.js'
 
 // ── Input validation ──────────────────────────────────────────────────────────
 
@@ -88,27 +61,42 @@ function isExternalWhitelisted(dest: string): boolean {
 }
 
 /**
- * Check the destination policy for a sign request.
+ * Check the destination policy for a sign request, against the recipient
+ * EXTRACTED from the bytes being signed. `destHint` is the caller-supplied
+ * `requestJSON.destination` — a cross-check only, never authoritative: when
+ * non-null it must equal the extracted recipient (defense in depth).
+ *
  * Returns true if the request is permitted, false if it must be denied.
  */
 export function checkPolicy(
   signingPath: string,
-  actionType:  string,
-  destination: string | null,
+  category:    ActionCategory,
+  recipient:   Recipient,
+  destHint:    string | null,
   pool:        AddressPool,
 ): boolean {
-  const category = getCategory(actionType)
-  if (!category) return false
+  // auth / internal: the bytes must move no funds to an external recipient.
+  // This also closes actionType-spoofing — the hash was recomputed from the
+  // claimed action's schema, so a fund-move artifact cannot masquerade as auth.
+  if (category === 'auth' || category === 'internal') {
+    return recipient.kind === 'none'
+  }
 
-  if (category === 'auth')     return destination === null
-  if (category === 'internal') return destination === null
+  // transfer / withdrawal: there must be a decoded external recipient.
+  if (recipient.kind !== 'transfer') return false
+  const dest = recipient.recipient
+  if (!isValidDestination(dest)) return false
 
-  if (destination === null) return false
+  // Defense-in-depth: a non-null caller hint must agree with the extracted bytes.
+  if (destHint !== null) {
+    if (!isValidDestination(destHint)) return false
+    if (destHint.toLowerCase() !== dest.toLowerCase()) return false
+  }
 
   const signingIdx = pathIndex(signingPath)
 
   if (category === 'transfer') {
-    const destIdx = getInternalIndex(destination, pool)
+    const destIdx = getInternalIndex(dest, pool)
     if (destIdx === null) return false           // not an internal address
     if (signingIdx <= 49) return destIdx >= 50 && destIdx <= 99
     return true                                  // 50+: any internal address
@@ -116,8 +104,8 @@ export function checkPolicy(
 
   // withdrawal: internal pool OR external whitelist
   // (e.g. withdraw3 back to own on-chain address, or evmWithdraw to second armory)
-  if (getInternalIndex(destination, pool) !== null) return true
-  return isExternalWhitelisted(destination)
+  if (getInternalIndex(dest, pool) !== null) return true
+  return isExternalWhitelisted(dest)
 }
 
 // ── Signing ───────────────────────────────────────────────────────────────────

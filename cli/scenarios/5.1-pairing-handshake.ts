@@ -11,7 +11,7 @@
  * implicitly validates it. Here we assert explicitly that commands work
  * post-pairing, confirming the pairing gate is not silently bypassed.
  */
-import { setup, teardown, assert, type ArmoryContext } from './_harness.js'
+import { setup, teardown, assert, hlToken, type ArmoryContext } from './_harness.js'
 
 let exitCode = 0
 let ctx: ArmoryContext | null = null
@@ -25,7 +25,8 @@ try {
   const r2 = await ctx.client.send("derive m/44'/60'/0'/0/0")
   assert(r2.startsWith('ok 0x'), 'derive accepted after successful pairing')
 
-  const r3 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${'c'.repeat(64)}`)
+  const token = hlToken({ type: 'approveAgent', hyperliquidChain: 'Mainnet', agentAddress: '0x1111111111111111111111111111111111111111', agentName: 'a', nonce: 1 })
+  const r3 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${token}`)
   assert(r3.startsWith('ok '), 'sign accepted after successful pairing')
 
   console.log('\n  All assertions passed.\n')

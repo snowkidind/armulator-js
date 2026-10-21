@@ -1,78 +1,41 @@
 /**
- * 4.1 — sign-dydx-actions
+ * 4.1 — sign-dydx-actions  (deferred: Cosmos/dYdX binding is a later phase)
  *
- * Verifies dYdX action types using EVM paths (coin type 60).
- * dYdX uses 0x addresses — same derived addresses as HL and on-chain operations.
- * One address per customer across all exchanges.
+ * The destination-binding fix makes armory recompute the signing hash from the
+ * artifact and extract the recipient from those bytes. The dYdX/Cosmos recompute
+ * + recipient extractor is a later phase: its descriptors are SCAFFOLDED in
+ * src/actions.ts (artifactKind 'cosmos-msg') but FAIL CLOSED today.
  *
- * Auth actions:
- *   AddAuthenticator, RemoveAuthenticator — any index, no destination
- *
- * Transfer actions:
- *   MsgTransfer, MsgSend — destination policy matches EVM transfer rules
- *     (0-49 → 50-99 only; 50+ → any internal)
- *
- * Withdrawal actions:
- *   MsgWithdrawFromSubaccount — internal pool OR external whitelist
+ * Until that extractor lands, every dYdX/Cosmos action must refuse to sign rather
+ * than fall back to blindly signing a caller digest (which was the #5 bug class).
+ * This test pins that interim contract: all dYdX/Cosmos actions → denied.
  */
-import { setup, teardown, assert, type ArmoryContext } from './_harness.js'
-import { recoverAddress }                               from 'ethers'
+import { setup, teardown, assert, encodeRequest, type ArmoryContext } from './_harness.js'
 
-const HASH          = '4'.repeat(64)
-const DRAIN         = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
-const SIG_RE        = /^[0-9a-fA-F]{130}$/
+// A well-formed cosmos-msg artifact so the request parses; the refusal must come
+// from the not-yet-implemented recompute (fail closed), not malformed input.
+const COSMOS_TOKEN = encodeRequest({ artifact: { kind: 'cosmos-msg', msg: { foo: 'bar' } } })
+
+const DYDX_ACTIONS = [
+  'registerAccount',
+  'transferOut',
+  'withdraw',
+  'AddAuthenticator',
+  'RemoveAuthenticator',
+  'MsgTransfer',
+  'MsgSend',
+  'MsgWithdrawFromSubaccount',
+]
 
 let exitCode = 0
 let ctx: ArmoryContext | null = null
 try {
-  ctx = await setup({ env: { ARMORY_DRAIN_ADDRESS: DRAIN } })
+  ctx = await setup()
 
-  const addr75  = (await ctx.client.send("derive m/44'/60'/0'/0/75")).slice(3)
-  const addr10  = (await ctx.client.send("derive m/44'/60'/0'/0/10")).slice(3)
-  const addr150 = (await ctx.client.send("derive m/44'/60'/0'/0/150")).slice(3)
-
-  // ── Auth ──────────────────────────────────────────────────────────────────
-
-  const r1 = await ctx.client.send(`sign m/44'/60'/0'/0/75 AddAuthenticator ${HASH}`)
-  assert(r1.startsWith('ok '), 'AddAuthenticator: returns ok')
-  assert(SIG_RE.test(r1.slice(3)), 'AddAuthenticator: signature is 65 bytes')
-
-  const r2 = await ctx.client.send(`sign m/44'/60'/0'/0/150 RemoveAuthenticator ${HASH}`)
-  assert(r2.startsWith('ok '), 'RemoveAuthenticator from user account: returns ok')
-
-  // ── Transfer — staging tier applies ──────────────────────────────────────
-
-  // MsgTransfer from 0-49: only 50-99 allowed
-  const r3 = await ctx.client.send(`sign m/44'/60'/0'/0/5 MsgTransfer ${addr75} ${HASH}`)
-  assert(r3.startsWith('ok '), 'MsgTransfer 0-49 → 50-99: allowed')
-
-  const r4 = await ctx.client.send(`sign m/44'/60'/0'/0/5 MsgTransfer ${addr10} ${HASH}`)
-  assert(r4 === 'err sign request denied', 'MsgTransfer 0-49 → 0-49: denied')
-
-  const r5 = await ctx.client.send(`sign m/44'/60'/0'/0/5 MsgTransfer ${addr150} ${HASH}`)
-  assert(r5 === 'err sign request denied', 'MsgTransfer 0-49 → 100+: denied')
-
-  // MsgTransfer from 50+: any internal allowed
-  const r6 = await ctx.client.send(`sign m/44'/60'/0'/0/75 MsgTransfer ${addr150} ${HASH}`)
-  assert(r6.startsWith('ok '), 'MsgTransfer 50+ → 100+: allowed')
-
-  // MsgSend (gas distribution) follows same transfer rules
-  const r7 = await ctx.client.send(`sign m/44'/60'/0'/0/75 MsgSend ${addr10} ${HASH}`)
-  assert(r7.startsWith('ok '), 'MsgSend 50+ → 0-49: allowed')
-
-  // ── Withdrawal ────────────────────────────────────────────────────────────
-
-  // MsgWithdrawFromSubaccount → internal address
-  const r8 = await ctx.client.send(`sign m/44'/60'/0'/0/75 MsgWithdrawFromSubaccount ${addr150} ${HASH}`)
-  assert(r8.startsWith('ok '), 'MsgWithdrawFromSubaccount → internal: allowed')
-
-  // MsgWithdrawFromSubaccount → drain address
-  const r9 = await ctx.client.send(`sign m/44'/60'/0'/0/75 MsgWithdrawFromSubaccount ${DRAIN} ${HASH}`)
-  assert(r9.startsWith('ok '), 'MsgWithdrawFromSubaccount → drain: allowed')
-
-  // MsgWithdrawFromSubaccount → non-whitelisted external: denied
-  const r10 = await ctx.client.send(`sign m/44'/60'/0'/0/75 MsgWithdrawFromSubaccount 0x5555555555555555555555555555555555555555 ${HASH}`)
-  assert(r10 === 'err sign request denied', 'MsgWithdrawFromSubaccount → non-whitelisted: denied')
+  for (const action of DYDX_ACTIONS) {
+    const r = await ctx.client.send(`sign m/44'/60'/0'/0/75 ${action} ${COSMOS_TOKEN}`)
+    assert(r === 'err sign request denied', `${action}: fails closed (Cosmos binding deferred)`)
+  }
 
   console.log('\n  All assertions passed.\n')
 } catch (e) {

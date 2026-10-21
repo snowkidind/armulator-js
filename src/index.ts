@@ -48,7 +48,8 @@ const { startServer }                          = await import('./server.js')
 const { parseCommand, ok, err }                = await import('./protocol.js')
 const { deriveAddress, buildAddressPool, expandPool, isValidPath, coinType, pathIndex } = await import('./derivation.js')
 const { validatePolicy }                       = await import('./policy.js')
-const { getCategory, checkPolicy, isValidHash, isValidDestination, signHash } = await import('./signer.js')
+const { checkPolicy, isValidHash, signHash }   = await import('./signer.js')
+const { getDescriptor }                        = await import('./actions.js')
 
 const SOCKET_PATH = process.env.ARMORY_SOCKET_PATH ?? '/tmp/armory.sock'
 
@@ -259,40 +260,75 @@ async function main(): Promise<void> {
       case 'sign': {
         if (!pool) return err('mnemonic not loaded')
 
-        const [signingPath, actionType, ...rest] = args
-        if (!signingPath || !actionType) return err('invalid command')
-        if (!isValidPath(signingPath))   return err('invalid command')
+        // Wire form: sign <signingPath> <actionType> <base64url(requestJSON)>
+        // requestJSON = { artifact, destination?, destIndex? }. armory recomputes
+        // the signing hash from the artifact (never a caller digest) and extracts
+        // the true recipient from those same bytes (destination-binding fix #5).
+        const [signingPath, actionType, token] = args
+        if (args.length !== 3 || !signingPath || !actionType || !token) return err('invalid command')
+        if (!isValidPath(signingPath)) return err('invalid command')
 
-        const category = getCategory(actionType)
-        if (!category) return err('sign request denied')
-
-        let destination: string | null = null
-        let hashHex: string
-
-        if (category === 'auth' || category === 'internal') {
-          // No destination: routing target is implicit (auth = no fund move,
-          // internal = signer's own account, recovered from signature).
-          if (rest.length !== 1) return err('invalid command')
-          hashHex = rest[0]
-        } else {
-          // transfer / withdrawal: explicit destination + hash.
-          if (rest.length !== 2) return err('invalid command')
-          destination = rest[0]
-          hashHex     = rest[1]
-          if (!isValidDestination(destination)) return err('invalid command')
+        // Step 1 — decode base64url → JSON. Malformed input → invalid command.
+        if (!/^[A-Za-z0-9_-]+$/.test(token)) return err('invalid command')
+        let req: {
+          artifact?:    { kind?: string; unsignedTx?: unknown; action?: unknown }
+          destination?: unknown
+          destIndex?:   unknown
         }
-
-        if (!isValidHash(hashHex)) return err('invalid command')
-
-        if (!checkPolicy(signingPath, actionType, destination, pool)) {
-          return err('sign request denied')
-        }
-
         try {
-          return ok(signHash(mnemonic, signingPath, hashHex))
+          req = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'))
+        } catch {
+          return err('invalid command')
+        }
+        if (!req || typeof req !== 'object' || Array.isArray(req)) return err('invalid command')
+
+        const artifact = req.artifact
+        if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return err('invalid command')
+
+        const destHint = req.destination == null ? null : req.destination
+        if (destHint !== null && typeof destHint !== 'string') return err('invalid command')
+
+        // Step 2 — resolve the action descriptor. Unknown actionType → denied.
+        const descriptor = getDescriptor(actionType)
+        if (!descriptor) return err('sign request denied')
+
+        // Artifact kind must match the action's expected kind.
+        if (artifact.kind !== descriptor.artifactKind) return err('invalid command')
+        if (artifact.kind === 'evm-tx'    && typeof artifact.unsignedTx !== 'string') return err('invalid command')
+        if (artifact.kind === 'hl-action' && (typeof artifact.action !== 'object' || artifact.action === null)) return err('invalid command')
+
+        // Step 3 — recompute the signing hash from the artifact (fail closed).
+        let hashHex: string
+        try {
+          hashHex = descriptor.recomputeHash(artifact as Parameters<typeof descriptor.recomputeHash>[0])
         } catch {
           return err('sign request denied')
         }
+        if (!isValidHash(hashHex)) return err('sign request denied')
+
+        // Step 4 — extract the true recipient from those same bytes (fail closed).
+        let recipient
+        try {
+          recipient = descriptor.extractRecipient(artifact as Parameters<typeof descriptor.extractRecipient>[0])
+        } catch {
+          recipient = null
+        }
+        if (!recipient) return err('sign request denied')
+
+        // Step 5 — enforce policy against the EXTRACTED recipient.
+        if (!checkPolicy(signingPath, descriptor.category, recipient, destHint, pool)) {
+          return err('sign request denied')
+        }
+
+        // Step 6 — sign the recomputed hash; return the derived signer address too.
+        let signature: string
+        try {
+          signature = signHash(mnemonic, signingPath, hashHex)
+        } catch {
+          return err('sign request denied')
+        }
+        const address = deriveAddress(mnemonic, signingPath)
+        return ok(`${address} ${signature}`)
       }
 
       default:

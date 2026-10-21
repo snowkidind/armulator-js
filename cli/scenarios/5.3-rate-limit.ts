@@ -10,9 +10,11 @@
  * within milliseconds; the server processes them sequentially and applies
  * the sliding-window rate limit.
  */
-import { setup, teardown, assert, type ArmoryContext } from './_harness.js'
+import { setup, teardown, assert, hlToken, type ArmoryContext } from './_harness.js'
 
-const HASH    = 'd'.repeat(64)
+// A valid approveAgent request (auth, no recipient) so each under-limit sign
+// returns `ok ...`; the rate limiter is what caps the count.
+const TOKEN   = hlToken({ type: 'approveAgent', hyperliquidChain: 'Mainnet', agentAddress: '0x1111111111111111111111111111111111111111', agentName: 'a', nonce: 1 })
 const TOTAL   = 15
 const MAX_OK  = 10
 
@@ -25,7 +27,7 @@ try {
   // immediately and the server sees them within the same 1-second window.
   const promises: Promise<string>[] = []
   for (let i = 0; i < TOTAL; i++) {
-    promises.push(ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${HASH}`))
+    promises.push(ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${TOKEN}`))
   }
   const results = await Promise.all(promises)
 

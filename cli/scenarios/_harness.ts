@@ -25,7 +25,7 @@ import fs                       from 'node:fs'
 import path                     from 'node:path'
 import { fileURLToPath }        from 'node:url'
 import { spawn, ChildProcess }  from 'node:child_process'
-import { HDNodeWallet }         from 'ethers'
+import { HDNodeWallet, Transaction, type TransactionLike } from 'ethers'
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,40 @@ export const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon ab
 // Canonical path used for the pairing challenge-response handshake.
 // Must match PAIRING_PATH in src/index.ts.
 const PAIRING_PATH = "m/44'/60'/0'/0/255"
+
+// ── New-wire sign-request helpers (destination-binding protocol) ───────────────
+//
+// Wire form:  sign <signingPath> <actionType> <base64url(requestJSON)>
+//   requestJSON = { artifact, destination?, destIndex? }
+//   artifact    = { kind:'evm-tx', unsignedTx } | { kind:'hl-action', action }
+// Response:   ok <derivedAddress> <signature130hex>
+//
+// `destination` is an OPTIONAL cross-check hint; omit it (undefined) to send no
+// hint, or pass a string to exercise the defense-in-depth hint/bytes agreement.
+
+export function encodeRequest(req: unknown): string {
+  return Buffer.from(JSON.stringify(req), 'utf8').toString('base64url')
+}
+
+/** Serialize an unsigned EVM tx and wrap it as an evm-tx request token. */
+export function evmToken(txRequest: TransactionLike, destination?: string | null): string {
+  const unsignedTx = Transaction.from(txRequest).unsignedSerialized
+  const req: Record<string, unknown> = { artifact: { kind: 'evm-tx', unsignedTx } }
+  if (destination !== undefined) req.destination = destination
+  return encodeRequest(req)
+}
+
+/** The 64-char unsigned-hash (no 0x) of an EVM tx — for positive-path ecrecover. */
+export function evmUnsignedHash(txRequest: TransactionLike): string {
+  return Transaction.from(txRequest).unsignedHash.slice(2)
+}
+
+/** Wrap an HL action object as an hl-action request token. */
+export function hlToken(action: Record<string, unknown>, destination?: string | null): string {
+  const req: Record<string, unknown> = { artifact: { kind: 'hl-action', action } }
+  if (destination !== undefined) req.destination = destination
+  return encodeRequest(req)
+}
 
 // ── Assertion ─────────────────────────────────────────────────────────────────
 

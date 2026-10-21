@@ -1,49 +1,59 @@
 /**
- * 3.8 — sign-hash-validation
+ * 3.8 — sign-input-validation
  *
- * Verifies that malformed inputs return err invalid command (not sign request denied):
- *   - Hash is not exactly 64 hex chars
- *   - Destination is not a valid address format
- *   - Wrong number of arguments for the action category
+ * Verifies that MALFORMED input returns err invalid command (not sign request
+ * denied). In the destination-binding wire form the sign payload is a single
+ * base64url(requestJSON) token, so "malformed" now means:
+ *   - wrong number of whitespace-delimited arguments
+ *   - a token that is not base64url / not valid JSON
+ *   - a request missing/!matching the artifact the action expects
+ *   - a bad signing path
+ *
+ * (Policy failures — denied — are covered in 3.5/3.7; here every case is structural.)
  */
-import { setup, teardown, assert, type ArmoryContext } from './_harness.js'
+import { setup, teardown, assert, encodeRequest, hlToken, evmToken, type ArmoryContext } from './_harness.js'
+import { parseEther, parseUnits }                                                         from 'ethers'
 
-const GOOD_HASH = 'a'.repeat(64)
+const INVALID = 'err invalid command'
+
+const goodHlToken = hlToken({ type: 'approveAgent', hyperliquidChain: 'Mainnet', agentAddress: '0x1111111111111111111111111111111111111111', agentName: 'a', nonce: 1 })
+const goodEvmToken = evmToken({ to: '0x1111111111111111111111111111111111111111', value: parseEther('0.1'), chainId: 42161, nonce: 1, gasLimit: 21000n, maxFeePerGas: parseUnits('0.1', 'gwei'), maxPriorityFeePerGas: parseUnits('0.1', 'gwei'), type: 2 })
 
 let exitCode = 0
 let ctx: ArmoryContext | null = null
 try {
   ctx = await setup()
 
-  const addr75 = (await ctx.client.send("derive m/44'/60'/0'/0/75")).slice(3)
+  // Too few arguments (path + actionType, no token)
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent`)) === INVALID, 'missing token: invalid command')
 
-  // Hash too short
-  const r1 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent tooshort`)
-  assert(r1 === 'err invalid command', 'short hash: invalid command')
+  // Too many arguments (an extra whitespace-delimited token)
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${goodHlToken} extra`)) === INVALID, 'extra argument: invalid command')
 
-  // Hash contains non-hex chars
-  const r2 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${'z'.repeat(64)}`)
-  assert(r2 === 'err invalid command', 'non-hex hash: invalid command')
+  // Token contains a non-base64url character
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent abc*def`)) === INVALID, 'non-base64url token: invalid command')
 
-  // Hash too long (65 bytes = 130 chars)
-  const r3 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${'a'.repeat(65)}`)
-  assert(r3 === 'err invalid command', 'oversized hash: invalid command')
+  // Valid base64url but not JSON
+  const notJson = Buffer.from('hello', 'utf8').toString('base64url')
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${notJson}`)) === INVALID, 'base64url but not JSON: invalid command')
 
-  // Transfer: destination is not a valid address
-  const r4 = await ctx.client.send(`sign m/44'/60'/0'/0/5 usdSend notanaddress ${GOOD_HASH}`)
-  assert(r4 === 'err invalid command', 'invalid destination format: invalid command')
+  // JSON missing the artifact
+  const noArtifact = encodeRequest({ destination: '0x1111111111111111111111111111111111111111' })
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${noArtifact}`)) === INVALID, 'missing artifact: invalid command')
 
-  // Transfer: missing destination (only hash provided, parsed as dest)
-  const r5 = await ctx.client.send(`sign m/44'/60'/0'/0/5 usdSend ${GOOD_HASH}`)
-  assert(r5 === 'err invalid command', 'transfer missing destination: invalid command')
+  // Artifact kind does not match the action (approveAgent expects hl-action)
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${goodEvmToken}`)) === INVALID, 'artifact kind mismatch: invalid command')
 
-  // Auth: extra argument provided (auth expects exactly path + type + hash = 1 in rest)
-  const r6 = await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${addr75} ${GOOD_HASH}`)
-  assert(r6 === 'err invalid command', 'auth with extra argument: invalid command')
+  // hl-action with a non-object action
+  const badAction = encodeRequest({ artifact: { kind: 'hl-action', action: 'nope' } })
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/0 approveAgent ${badAction}`)) === INVALID, 'hl-action non-object action: invalid command')
 
-  // Transfer: missing hash (only destination provided)
-  const r7 = await ctx.client.send(`sign m/44'/60'/0'/0/5 usdSend ${addr75}`)
-  assert(r7 === 'err invalid command', 'transfer missing hash: invalid command')
+  // evm-tx with a non-string unsignedTx
+  const badEvm = encodeRequest({ artifact: { kind: 'evm-tx', unsignedTx: 123 } })
+  assert((await ctx.client.send(`sign m/44'/60'/0'/0/5 transfer ${badEvm}`)) === INVALID, 'evm-tx non-string unsignedTx: invalid command')
+
+  // Bad signing path
+  assert((await ctx.client.send(`sign notapath approveAgent ${goodHlToken}`)) === INVALID, 'bad path: invalid command')
 
   console.log('\n  All assertions passed.\n')
 } catch (e) {

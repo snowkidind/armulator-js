@@ -13,40 +13,58 @@ callers.
 > material. If you need actual security, use a real USB Armory (or equivalent
 > HSM). See [Security model & limitations](#security-model--limitations).
 
-The daemon owns a BIP-39 mnemonic, derives addresses from it, and signs hashes
-on behalf of callers — while enforcing a hardcoded destination policy that
-callers cannot override.
+The daemon owns a BIP-39 mnemonic, derives addresses from it, and signs
+transactions on behalf of callers — while enforcing a hardcoded destination
+policy that callers cannot override.
 
-The mnemonic never leaves the process. Callers send a hash; they get a
-secp256k1 signature back.
+The mnemonic never leaves the process. Callers send the **unsigned artifact**
+(an EVM transaction or a Hyperliquid action); armory **recomputes the signing
+hash from those bytes**, **extracts the true recipient from the same bytes**,
+checks the recipient against its policy, and returns the derived signer address
+plus a secp256k1 signature. The caller never supplies the digest, so the policy
+decision is bound to exactly what gets signed.
 
 ---
 
 ## What armory is for
 
-armory is **not** a Hyperliquid tool, and it is not bound to any single chain. At
-its core it does exactly two things:
+armory is **not** a Hyperliquid tool, but it **is action-aware**: to bind the
+policy decision to the bytes it signs, it owns the EVM transaction decoder and the
+Hyperliquid EIP-712 schemas. At its core it does exactly two things:
 
-1. **Signs a 32-byte hash** with a key derived from the mnemonic (secp256k1), and
+1. **Recomputes the signing hash in-device** from the unsigned artifact the caller
+   hands over (an EVM tx, or an HL action), and signs *that* hash with a key
+   derived from the mnemonic (secp256k1) — never a caller-supplied digest, and
 2. **Gates where value may go** — it only signs for a known *action type*, and for
-   anything that moves funds, only to a *destination* that satisfies a hardcoded
-   policy a wire caller cannot override.
+   anything that moves funds, only to a recipient **decoded from the signed bytes**
+   that satisfies a hardcoded policy a wire caller cannot override.
 
-Everything platform-specific lives in the **caller**. armory never builds a
-transaction, talks to an exchange, or knows what chain a hash commits to — the
-client constructs the payload, hashes it, and asks armory to sign. armory's whole
-job is the **"should I sign this?"** decision.
+> **Earlier framing reversed (2026-10-21).** armory used to be described as a
+> "chain-agnostic hash-signer": the caller computed the hash and asserted a
+> destination string, and armory signed the digest blindly. That left the policy
+> unbound from the signed bytes — a caller could assert a whitelisted destination
+> while handing over a hash paying an attacker (issue #5, confirmed exploitable).
+> The fix moves hash recomputation and recipient extraction **into armory** (the
+> custody device), so it is now action-aware by design. See
+> [Security properties](#security-properties).
+
+The caller still builds the artifact; armory never talks to an exchange or
+broadcasts. But armory does decode the artifact far enough to answer, provably,
+the **"should I sign this, to this recipient?"** question.
 
 ### Where the "should I sign?" decision lives
 
 | Concern | File | Functions |
 |---------|------|-----------|
-| Is this action type allowed? Is the destination permitted? | [`src/signer.ts`](./src/signer.ts) | `getCategory()` (action whitelist), `checkPolicy()` (destination + tier rules) |
+| Is this action type allowed? How is its hash recomputed and its recipient decoded? | [`src/actions.ts`](./src/actions.ts) | `getDescriptor()` / `getCategory()` (action registry: category + `recomputeHash` + `extractRecipient`) |
+| Recompute + decode the artifact | [`src/evm/extract.ts`](./src/evm/extract.ts), [`src/hl/typedData.ts`](./src/hl/typedData.ts) | EVM tx hash/recipient; HL EIP-712 hashes |
+| Is the extracted recipient permitted? | [`src/signer.ts`](./src/signer.ts) | `checkPolicy()` (destination + tier rules, over the extracted recipient) |
 | Which external addresses may receive withdrawals? | [`src/policy.ts`](./src/policy.ts) | `getExternalWhitelist()`, `getDrainAddress()` |
 
-`signer.ts` holds the rules; `policy.ts` holds the address data those rules consult.
-If you read only two files to understand what armory will and won't authorize, read
-these two.
+`actions.ts` binds each action type to how its hash is recomputed and its recipient
+decoded; `signer.ts` holds the policy rules; `policy.ts` holds the address data
+those rules consult. If you read only these files you understand what armory will
+and won't authorize.
 
 ### What the reference deployment authorizes: Hyperliquid
 
@@ -71,11 +89,15 @@ different signing model on a Cosmos chain). See the full
 
 ### Which chains does it support?
 
-armory is **chain-agnostic.** It signs a raw secp256k1 hash and derives addresses for
-two coin types — **EVM** (`m/44'/60'`, `0x…`) and **Cosmos** (`m/44'/118'`,
-`cosmos1…` / `dydx1…`). It is **not** limited to Arbitrum. Arbitrum appears only
-because that is where Hyperliquid settles L1 deposits and withdrawals in the
-reference deployment — a property of the *caller's* transactions, not of armory.
+armory derives addresses for two coin types — **EVM** (`m/44'/60'`, `0x…`) and
+**Cosmos** (`m/44'/118'`, `cosmos1…` / `dydx1…`) — and is not limited to Arbitrum.
+Because it recomputes the signing hash and decodes the recipient itself, each
+artifact kind needs an in-device decoder: **generic EVM transactions** (native +
+ERC-20) and **Hyperliquid EIP-712 actions** are implemented today; the **Cosmos /
+dYdX** decoder is scaffolded (`cosmos-msg`) and **fails closed** until it lands
+(see the [action registry](#action-whitelist)). Arbitrum appears only because that
+is where Hyperliquid settles L1 withdrawals in the reference deployment — a
+property of the *caller's* transactions, not of armory.
 
 ### Adapting it to your platform
 
@@ -130,40 +152,48 @@ they can only push to high-value accounts, which act as a buffer.
 
 ### Action whitelist
 
-Only the following action types can be signed. Any other `actionType` string
-is rejected with `err sign request denied`.
+Each action type is a descriptor in [`src/actions.ts`](./src/actions.ts) that binds
+it to a *category*, an *artifact kind*, a `recomputeHash`, and an `extractRecipient`.
+Any `actionType` not in the registry is rejected with `err sign request denied`.
 
-| Action type | Category | Notes |
-|-------------|----------|-------|
-| `approveAgent` | auth | Authorize an ephemeral agent key on Hyperliquid |
-| `userSetAbstraction` | auth | Set self/agent abstraction mode on Hyperliquid |
-| `deposit` | auth | Move USDC from wallet to exchange margin |
-| `usdSend` | transfer | USDC peer-to-peer on HL L2 |
-| `usdClassTransfer` | internal | USDC perps↔spot within the signer's own account |
-| `spotSend` | transfer | Spot token (HYPE, etc.) peer-to-peer on HL L2 |
-| `withdraw3` | withdrawal | HL L2 → external L1 (USDC or any spot token) |
-| `transfer` | transfer | ERC-20 or native send to internal address |
-| `evmWithdraw` | withdrawal | ERC-20 or native send to external whitelist |
-| `registerAccount` | auth | dYdX agent registration (ETH personal_sign) |
-| `transferOut` | transfer | dYdX USDC transfer to another account |
-| `withdraw` | withdrawal | dYdX withdraw to own address |
-| `AddAuthenticator` | auth | Register permissioned trading key on dYdX |
-| `RemoveAuthenticator` | auth | Revoke permissioned trading key on dYdX |
-| `MsgTransfer` | transfer | Between accounts on dYdX |
-| `MsgSend` | transfer | Native token send on dYdX (gas distribution) |
-| `MsgWithdrawFromSubaccount` | withdrawal | dYdX subaccount withdrawal |
+| Action type | Category | Artifact | Binding status | Notes |
+|-------------|----------|----------|----------------|-------|
+| `approveAgent` | auth | hl-action | bound | Authorize an ephemeral agent key on Hyperliquid |
+| `userSetAbstraction` | auth | hl-action | bound | Set self/agent abstraction mode on Hyperliquid |
+| `usdClassTransfer` | internal | hl-action | bound | USDC perps↔spot within the signer's own account |
+| `usdSend` | transfer | hl-action | bound | USDC peer-to-peer on HL L2 |
+| `spotSend` | transfer | hl-action | bound | Spot token (HYPE, etc.) peer-to-peer on HL L2 |
+| `withdraw3` | withdrawal | hl-action | bound | HL L2 → external L1 (USDC or any spot token) |
+| `transfer` | transfer | evm-tx | bound | ERC-20 or native send to internal address |
+| `evmWithdraw` | withdrawal | evm-tx | bound | ERC-20 or native send to external whitelist |
+| `deposit` | auth | hl-action | bound | Phantom-agent `source:'c'` scheme (not user-action); recomputes the committed hotserv hash (see `src/hl/typedData.ts`) |
+| `registerAccount` | auth | cosmos-msg | **fails closed** | dYdX agent registration — Cosmos decoder deferred |
+| `transferOut` | transfer | cosmos-msg | **fails closed** | dYdX USDC transfer — Cosmos decoder deferred |
+| `withdraw` | withdrawal | cosmos-msg | **fails closed** | dYdX withdraw — Cosmos decoder deferred |
+| `AddAuthenticator` | auth | cosmos-msg | **fails closed** | Register permissioned trading key on dYdX |
+| `RemoveAuthenticator` | auth | cosmos-msg | **fails closed** | Revoke permissioned trading key on dYdX |
+| `MsgTransfer` | transfer | cosmos-msg | **fails closed** | Between accounts on dYdX |
+| `MsgSend` | transfer | cosmos-msg | **fails closed** | Native token send on dYdX (gas distribution) |
+| `MsgWithdrawFromSubaccount` | withdrawal | cosmos-msg | **fails closed** | dYdX subaccount withdrawal |
 
-**auth** actions require no destination — just `signingPath`, `actionType`, and `hash`.
+**Binding status** — *bound* actions recompute the hash and extract the recipient
+in-device. *Fails closed* actions are registered (so callers see a consistent
+category) but their recompute is not yet implemented, so any sign request for them
+is refused rather than signed blindly. The Cosmos / dYdX decoder is a later phase.
 
-**internal** actions also take no destination: the funds move within the
-signer's own account (e.g. perps↔spot ledger transfer), so the routing target
-is the signer itself, recovered from the signature. Nothing for policy to validate.
+**auth** actions carry no external recipient. armory still recomputes the hash from
+the claimed action's schema, so a fund-moving artifact submitted under an auth
+action type fails to recompute and is denied (actionType-spoof closed).
 
-**transfer** actions require a destination that is an internal address, subject
-to the tier rules above.
+**internal** actions also carry no external recipient: the funds move within the
+signer's own account (e.g. perps↔spot ledger transfer), recovered from the
+signature. Nothing external for policy to validate.
 
-**withdrawal** actions require a destination that is either an internal address
-or is present in the external whitelist / drain address.
+**transfer** actions require the recipient decoded from the signed bytes to be an
+internal address, subject to the tier rules above.
+
+**withdrawal** actions require the decoded recipient to be either an internal
+address or present in the external whitelist / drain address.
 
 ### External whitelist and drain address
 
@@ -357,33 +387,44 @@ determines the address format.
 
 Supported coin types: `60` (EVM, `0x...`) and `118` (Cosmos, `cosmos1...`).
 
-#### `sign <path> <actionType> [<destination>] <hash>`
+#### `sign <signingPath> <actionType> <base64url(requestJSON)>`
 
-Sign a 32-byte hash. The response is a 65-byte secp256k1 signature as 130
-lowercase hex chars (`r[32] || s[32] || v[1]`).
+The caller sends the **unsigned artifact**, never a digest. armory recomputes the
+signing hash from the artifact, extracts the true recipient from those same bytes,
+checks the recipient against policy, signs the recomputed hash, and returns the
+derived signer address **and** the signature.
 
-**Auth actions** (no destination):
+`base64url(requestJSON)` is a single whitespace-free base64url token (no padding) of:
+
+```jsonc
+{
+  "artifact":
+      { "kind": "evm-tx",    "unsignedTx": "0x..." }        // generic EVM (evmWithdraw / transfer)
+    | { "kind": "hl-action", "action": { ...wire JSON... } }, // HL L2 EIP-712 actions
+  "destination": "0x..." | "cosmos1..." | null,             // HINT only — cross-checked, never trusted
+  "destIndex":   <number> | null                            // optional pool-membership hint
+}
 ```
-→  sign m/44'/60'/0'/0/5 approveAgent <64-char-hash>
-←  ok <130-char-hex-signature>
+
+Example (HL withdrawal):
+```
+→  sign m/44'/60'/0'/0/100 withdraw3 <base64url({"artifact":{"kind":"hl-action","action":{...}}})>
+←  ok 0xSignerAddr... <130-char-hex-signature>
 ```
 
-**Transfer and withdrawal actions** (with destination):
-```
-→  sign m/44'/60'/0'/0/5 usdSend 0xDestAddr... <64-char-hash>
-←  ok <130-char-hex-signature>
+The response is `ok <derivedAddress> <signature130hex>`, where `<derivedAddress>` is
+the address at `<signingPath>`. The **caller MUST assert** it equals the expected
+signer before broadcast/submit (money-path key-match guard). The signature is a
+65-byte secp256k1 signature as 130 lowercase hex chars (`r[32] || s[32] || v[1]`).
 
-→  sign m/44'/60'/0'/0/5 withdraw3 0xExternalAddr... <64-char-hash>
-←  ok <130-char-hex-signature>
-```
-
-Destinations must be EVM (`0x` + 40 hex chars) or Cosmos bech32 (`cosmos1...`
-or `dydx1...`). Hashes must be exactly 64 hex chars (32 bytes).
+`destination` is an optional HINT: when non-null it must equal the recipient armory
+decodes from the bytes, or the request is denied (defense in depth). It can never
+*authorize* a recipient — only the decoded bytes can.
 
 Error responses:
 ```
-←  err invalid command       (bad path, bad hash format, bad destination format)
-←  err sign request denied   (action type not whitelisted, policy violation)
+←  err invalid command       (malformed path / base64 / JSON / artifact shape)
+←  err sign request denied   (unknown action type, undecodable artifact, policy violation)
 ←  err mnemonic not loaded   (armory in error state)
 ←  err rate limit exceeded   (>10 sign commands/sec on this connection)
 ```
@@ -396,12 +437,23 @@ These are the properties the emulator enforces **against a caller on the socket*
 i.e. within the emulator's trust boundary. They are not hardware guarantees; read
 [Security model & limitations](#security-model--limitations) for where they stop.
 
-- **Mnemonic never leaves the process.** Callers send hashes; they receive
-  signatures. No key material is ever transmitted over the socket.
+- **Mnemonic never leaves the process.** Callers send unsigned artifacts; they
+  receive a signature. No key material is ever transmitted over the socket.
+- **The signed hash is recomputed in-device and bound to the policy decision.**
+  armory recomputes the signing hash from the artifact (EVM `unsignedHash` /
+  HL EIP-712) and decodes the true recipient from those same bytes — the native
+  `to`, the ERC-20 `transfer` recipient in calldata, or the HL action's
+  destination field. The caller cannot supply a divergent digest, and the policy
+  is checked against the recipient of exactly what gets signed. This closes the
+  issue-#5 whitelist bypass (a caller asserting a whitelisted destination while
+  handing over a hash paying an attacker) and actionType-spoofing (a fund-moving
+  artifact submitted under an auth action fails to recompute → denied). Any
+  artifact armory cannot decode **fails closed**.
 - **Destination policy is enforced by the armory, not the caller.** A wire
   caller cannot override the whitelist or tier rules by sending different
-  arguments. (Note: the *operator* can change policy via env vars at restart —
-  see limitation 2.)
+  arguments, and the caller-supplied `destination` is a cross-check hint only,
+  never authoritative. (Note: the *operator* can change policy via env vars at
+  restart — see limitation 2.)
 - **Pairing handshake.** Every new connection must prove knowledge of the
   mnemonic by signing a fresh nonce. A caller that doesn't hold the
   mnemonic-derived pairing key cannot connect.
@@ -481,12 +533,22 @@ emulator. All points were verified against the source.
    only caught incidentally when the decrypted bytes fail BIP-39 validation. Adequate
    to obfuscate a dev secret; not tamper-evident storage.
 
-Two protocol-level notes, true of the emulator *and* a real device: policy is
-evaluated against the caller-supplied `actionType`/`destination` **strings**, which
-are not cryptographically bound to the 32-byte hash being signed — a caller can
-assert a permitted action while submitting a hash committing to something else.
-And at runtime the logger emits only the command *name*, never arguments, hashes,
-or the mnemonic; the only cleartext key exposure is at `init`/`rekey` (points 4, 8).
+10. **The session model is multi-peer with no identity.** The server serves multiple
+    concurrent paired connections; each pairs independently with equal authority, a
+    second peer neither evicts nor is detected by the first, and pairing authenticates
+    possession of the pairing key, not the identity of the connecting process.
+    (Documentation only; enforcing single-session / peer-cred / `0600` is a separate
+    decision, not part of the destination-binding work.)
+
+Protocol-level note, true of the emulator *and* a real device: the logger emits only
+the command *name* at runtime, never arguments, artifacts, hashes, or the mnemonic;
+the only cleartext key exposure is at `init`/`rekey` (points 4, 8).
+
+> **Binding note (issue #5, fixed).** The policy is **no longer** evaluated against
+> caller-supplied strings decoupled from the signed bytes. armory recomputes the
+> signing hash from the artifact and decodes the recipient from those same bytes, so
+> the `actionType`/`destination` a caller asserts can only ever *fail* the check, not
+> smuggle a different payload past it. See [Security properties](#security-properties).
 
 > **This is an emulator for development and testing. It is not a hardware security
 > module and must not be relied on to protect real funds or real key material.** It
@@ -503,11 +565,14 @@ or the mnemonic; the only cleartext key exposure is at `init`/`rekey` (points 4,
 
 ```
 src/
-  index.ts        Entry point — CLI dispatch (init, rekey) and daemon startup
+  index.ts        Entry point — CLI dispatch (init, rekey), daemon startup, sign dispatch
   server.ts       Unix socket server — framing, pairing handshake, rate limiting
   mnemonic.ts     Mnemonic lifecycle — generate, import, encrypt, load, rekey
   derivation.ts   BIP-32/44 derivation — EVM and Cosmos address encoding
-  signer.ts       Action whitelist, destination policy, hash signing
+  actions.ts      Action descriptor registry — category + recomputeHash + extractRecipient
+  evm/extract.ts  EVM artifact: recompute unsignedHash + decode recipient (native/ERC-20)
+  hl/typedData.ts Hyperliquid EIP-712 schemas (local copy) + hash recompute
+  signer.ts       Destination policy over the extracted recipient, hash signing
   policy.ts       External whitelist and drain address (edit for production)
   protocol.ts     Wire protocol helpers — parse commands, format responses
   encryption.ts   Argon2id + AES-256-CBC encrypt/decrypt
