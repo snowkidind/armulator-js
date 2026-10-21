@@ -30,7 +30,8 @@
     "start": "tsx src/index.ts",
     "init": "tsx src/index.ts init",
     "rekey": "tsx src/index.ts rekey",
-    "cli": "tsx cli/index.ts"
+    "cli": "tsx cli/index.ts",
+    "example": "tsx examples/reference-client.ts"
   },
   "dependencies": {
     "argon2": "^0.44.0",

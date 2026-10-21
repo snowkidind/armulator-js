@@ -22,6 +22,73 @@ secp256k1 signature back.
 
 ---
 
+## What armory is for
+
+armory is **not** a Hyperliquid tool, and it is not bound to any single chain. At
+its core it does exactly two things:
+
+1. **Signs a 32-byte hash** with a key derived from the mnemonic (secp256k1), and
+2. **Gates where value may go** — it only signs for a known *action type*, and for
+   anything that moves funds, only to a *destination* that satisfies a hardcoded
+   policy a wire caller cannot override.
+
+Everything platform-specific lives in the **caller**. armory never builds a
+transaction, talks to an exchange, or knows what chain a hash commits to — the
+client constructs the payload, hashes it, and asks armory to sign. armory's whole
+job is the **"should I sign this?"** decision.
+
+### Where the "should I sign?" decision lives
+
+| Concern | File | Functions |
+|---------|------|-----------|
+| Is this action type allowed? Is the destination permitted? | [`src/signer.ts`](./src/signer.ts) | `getCategory()` (action whitelist), `checkPolicy()` (destination + tier rules) |
+| Which external addresses may receive withdrawals? | [`src/policy.ts`](./src/policy.ts) | `getExternalWhitelist()`, `getDrainAddress()` |
+
+`signer.ts` holds the rules; `policy.ts` holds the address data those rules consult.
+If you read only two files to understand what armory will and won't authorize, read
+these two.
+
+### What the reference deployment authorizes: Hyperliquid
+
+Out of the box, the action whitelist in `signer.ts` is populated for **Hyperliquid
+trading**. The Hyperliquid-specific part is a group of action-type *strings* —
+nothing more:
+
+| Action type | Purpose |
+|-------------|---------|
+| `approveAgent` | Authorize an ephemeral agent (API) key |
+| `userSetAbstraction` | Set self/agent abstraction mode |
+| `deposit` | Move USDC from wallet to exchange margin |
+| `usdSend` | USDC peer-to-peer on the HL L2 |
+| `usdClassTransfer` | USDC perps↔spot within the signer's own account |
+| `spotSend` | Spot token (HYPE, …) peer-to-peer on the HL L2 |
+| `withdraw3` | Withdraw USDC / spot token from the HL L2 to an external L1 address |
+
+The same whitelist also carries a **generic EVM** group (`transfer`, `evmWithdraw` —
+any EVM chain) and a **dYdX / Cosmos** group (`registerAccount`, `MsgSend`, … — a
+different signing model on a Cosmos chain). See the full
+[Action whitelist](#action-whitelist) table below.
+
+### Which chains does it support?
+
+armory is **chain-agnostic.** It signs a raw secp256k1 hash and derives addresses for
+two coin types — **EVM** (`m/44'/60'`, `0x…`) and **Cosmos** (`m/44'/118'`,
+`cosmos1…` / `dydx1…`). It is **not** limited to Arbitrum. Arbitrum appears only
+because that is where Hyperliquid settles L1 deposits and withdrawals in the
+reference deployment — a property of the *caller's* transactions, not of armory.
+
+### Adapting it to your platform
+
+To authorize a different exchange or protocol you edit the two policy files above and
+build your own payloads client-side. Step-by-step walkthrough:
+[`docs/ADAPTING.md`](./docs/ADAPTING.md).
+
+A minimal working client that pairs, derives, and signs lives in
+[`examples/reference-client.ts`](./examples/reference-client.ts) — run it against a
+dev daemon with `npm run example`.
+
+---
+
 ## Concepts
 
 ### Mnemonic and key material
@@ -450,6 +517,12 @@ src/
   mnemonic.enc    Encrypted mnemonic — never commit or transmit
 
 .env              ARMORY_KEY — never commit or transmit
+
+examples/
+  reference-client.ts   Minimal standalone client — pair, derive, sign (npm run example)
+
+docs/
+  ADAPTING.md           How to retarget the action whitelist and policy to your platform
 ```
 
 ---
