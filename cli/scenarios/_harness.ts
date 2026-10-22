@@ -1,15 +1,17 @@
 /**
- * Shared test harness for armory Phase 1–5 scenarios.
+ * Shared test harness for the armory scenario suite.
  *
  * Handles:
  *   - Armory process lifecycle (kill, wipe .keys/, start, wait for socket)
- *   - Length-prefixed IPC client (send/receive over /tmp/armory.sock)
+ *   - Length-prefixed IPC client (send/receive over /tmp/armory-test.sock)
  *   - Assertion helpers (assert)
  *
  * Convention:
  *   All scenarios use ARMORY_NO_DOTENV=1 so that a developer's local .env
- *   cannot contaminate the test environment. All required env vars are passed
- *   explicitly to the subprocess.
+ *   cannot contaminate the test environment; every required env var is passed
+ *   explicitly to the subprocess. That includes EXTERNAL_WHITELIST_ADDRESS_01,
+ *   which policy.ts requires at load — the harness injects a bogus test address
+ *   (TEST_WHITELIST_ADDRESS) so the daemon starts without reading .env.
  *
  * Test mnemonic (widely used BIP-39 test vector — all-abandon):
  *   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
@@ -40,6 +42,22 @@ export const SOCKET_PATH = '/tmp/armory-test.sock'   // isolated from production
 
 export const TEST_KEY      = 'a'.repeat(64)   // 32 bytes, hex — fixed test key
 export const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+
+// Bogus EVM address injected as EXTERNAL_WHITELIST_ADDRESS_01 so policy.ts can
+// load under ARMORY_NO_DOTENV=1 (which skips .env, where the real value lives).
+// Lowercase valid hex so ethers isAddress accepts it without a checksum. This is
+// NOT a real whitelist entry — scenarios that assert on the active whitelist set
+// ARMORY_EXTERNAL_WHITELIST instead.
+export const TEST_WHITELIST_ADDRESS = '0x000000000000000000000000000000000000dead'
+
+// Log the bogus-whitelist injection once per harness process so test output
+// makes plain that a fake whitelist address is in use, never a real one.
+let whitelistInjectionLogged = false
+function logTestWhitelist(value: string): void {
+  if (whitelistInjectionLogged) return
+  console.error(`[harness] EXTERNAL_WHITELIST_ADDRESS_01=${value} (bogus test address; not a real whitelist)`)
+  whitelistInjectionLogged = true
+}
 
 // Canonical path used for the pairing challenge-response handshake.
 // Must match PAIRING_PATH in src/index.ts.
@@ -216,8 +234,10 @@ export function startArmoryProcess(opts: StartOptions = {}): ChildProcess {
     ARMORY_SOCKET_PATH: SOCKET_PATH,
     ARMORY_KEYS_DIR:    KEYS_DIR,
     ARMORY_ENV_PATH:    ENV_PATH,
+    EXTERNAL_WHITELIST_ADDRESS_01: TEST_WHITELIST_ADDRESS,
     ...env,
   }
+  logTestWhitelist(childEnv['EXTERNAL_WHITELIST_ADDRESS_01'])
 
   // Only inject key/mnemonic if they're non-empty.
   if (key)      childEnv['ARMORY_KEY']      = key
@@ -303,8 +323,10 @@ export function runCommand(
       ARMORY_NO_DOTENV: '1',
       ARMORY_KEYS_DIR:  KEYS_DIR,
       ARMORY_ENV_PATH:  ENV_PATH,
+      EXTERNAL_WHITELIST_ADDRESS_01: TEST_WHITELIST_ADDRESS,
       ...opts.env,
     }
+    logTestWhitelist(childEnv['EXTERNAL_WHITELIST_ADDRESS_01'])
 
     const proc = spawn('npx', ['tsx', 'src/index.ts', ...args], {
       cwd:   ARMORY_ROOT,

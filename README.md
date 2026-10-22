@@ -625,7 +625,9 @@ Test scenarios live in `cli/scenarios/`. The shared harness (`_harness.ts`)
 handles process lifecycle, pairing, and the `ArmoryClient` IPC wrapper.
 
 All test runs use `ARMORY_NO_DOTENV=1` to prevent the local `.env` from
-affecting results.
+affecting results; the harness injects a bogus `EXTERNAL_WHITELIST_ADDRESS_01`
+(which `policy.ts` requires at load) so the daemon starts hermetically. The
+injected address is logged on each run so it is never mistaken for a real one.
 
 ---
 
