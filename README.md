@@ -24,6 +24,24 @@ checks the recipient against its policy, and returns the derived signer address
 plus a secp256k1 signature. The caller never supplies the digest, so the policy
 decision is bound to exactly what gets signed.
 
+## From emulator to hardware
+
+armulator-js is the **first step** toward a USB Armory deployment, not the final
+product. The path to a real device, in order:
+
+1. **armulator-js (here)** — decide the business logic and security model, and
+   iterate on the design in plain JavaScript, without taking on the complexity of
+   the hardware. The "what should the signer allow?" questions get answered and
+   tested cheaply at this step.
+2. **TamaGo** — port the settled design to [TamaGo](https://github.com/usbarmory/tamago)
+   (the bare-metal Go the USB Armory runs), and test it against this emulator. Final
+   testing happens here.
+3. **USB Armory** — burn the TamaGo build onto the physical device.
+
+The emulator speaks the same IPC protocol and enforces the same security model as
+the device, so the callers you build at step 1 keep working unchanged through steps
+2 and 3 — the daemon is simply replaced by hardware.
+
 ---
 
 ## Quickstart
