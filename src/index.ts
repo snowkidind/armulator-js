@@ -227,7 +227,7 @@ async function main(): Promise<void> {
     logger.debug(`command: ${cmd}`)
 
     if (!mnemonic) {
-      return cmd === 'status' ? err('mnemonic not loaded') : err('mnemonic not loaded')
+      return err('mnemonic not loaded')
     }
 
     switch (cmd) {
@@ -261,9 +261,9 @@ async function main(): Promise<void> {
         if (!pool) return err('mnemonic not loaded')
 
         // Wire form: sign <signingPath> <actionType> <base64url(requestJSON)>
-        // requestJSON = { artifact, destination?, destIndex? }. armory recomputes
-        // the signing hash from the artifact (never a caller digest) and extracts
-        // the true recipient from those same bytes (destination-binding fix #5).
+        // requestJSON = { artifact, destination? }. armory recomputes the signing
+        // hash from the artifact (never a caller digest) and extracts the true
+        // recipient from those same bytes (destination binding).
         const [signingPath, actionType, token] = args
         if (args.length !== 3 || !signingPath || !actionType || !token) return err('invalid command')
         if (!isValidPath(signingPath)) return err('invalid command')
@@ -273,7 +273,6 @@ async function main(): Promise<void> {
         let req: {
           artifact?:    { kind?: string; unsignedTx?: unknown; action?: unknown }
           destination?: unknown
-          destIndex?:   unknown
         }
         try {
           req = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'))

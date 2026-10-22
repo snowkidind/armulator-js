@@ -45,10 +45,10 @@ export const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon ab
 // Must match PAIRING_PATH in src/index.ts.
 const PAIRING_PATH = "m/44'/60'/0'/0/255"
 
-// ── New-wire sign-request helpers (destination-binding protocol) ───────────────
+// ── Sign-request helpers (destination-binding protocol) ───────────────────────
 //
 // Wire form:  sign <signingPath> <actionType> <base64url(requestJSON)>
-//   requestJSON = { artifact, destination?, destIndex? }
+//   requestJSON = { artifact, destination? }
 //   artifact    = { kind:'evm-tx', unsignedTx } | { kind:'hl-action', action }
 // Response:   ok <derivedAddress> <signature130hex>
 //

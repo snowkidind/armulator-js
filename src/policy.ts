@@ -1,16 +1,18 @@
 /**
  * Hardcoded policy: external withdrawal whitelist and drain address.
  *
- * Production: edit EXTERNAL_WHITELIST_DEFAULT and DRAIN_ADDRESS_DEFAULT directly.
- * Testing:    override via ARMORY_EXTERNAL_WHITELIST (comma-separated) and
- *             ARMORY_DRAIN_ADDRESS env vars — mirrors the ARMORY_MNEMONIC pattern.
- *
  * External whitelist:  EVM or Cosmos bech32 addresses outside the mnemonic's
  *                      HD tree (second armory tiers, hot withdrawal wallets).
- *                      No entry cap. Whitelisted for withdrawal from any index.
- * Drain address:       emergency fund recovery. Must be a multisig in production.
- *                      Whitelisted for withdrawal from any signing index.
- *                      Leave empty string to disable.
+ *                      Built from the hardcoded HL bridge2 contract plus the
+ *                      required EXTERNAL_WHITELIST_ADDRESS_01 env var (module
+ *                      load throws if it is unset). No entry cap; whitelisted
+ *                      for withdrawal from any index.
+ * Drain address:       emergency fund recovery — edit DRAIN_ADDRESS_DEFAULT.
+ *                      Must be a multisig in production. Whitelisted for
+ *                      withdrawal from any signing index. Empty string disables.
+ * Testing:             override via ARMORY_EXTERNAL_WHITELIST (comma-separated)
+ *                      and ARMORY_DRAIN_ADDRESS env vars — mirrors the
+ *                      ARMORY_MNEMONIC pattern.
  *
  * On the TamaGo firmware these are compiled-in constants with no env var override.
  */

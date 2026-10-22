@@ -1,14 +1,13 @@
 /**
- * 4.1 — sign-dydx-actions  (deferred: Cosmos/dYdX binding is a later phase)
+ * 4.1 — sign-dydx-actions  (Cosmos/dYdX binding not implemented yet)
  *
- * The destination-binding fix makes armory recompute the signing hash from the
- * artifact and extract the recipient from those bytes. The dYdX/Cosmos recompute
- * + recipient extractor is a later phase: its descriptors are SCAFFOLDED in
- * src/actions.ts (artifactKind 'cosmos-msg') but FAIL CLOSED today.
+ * armory recomputes the signing hash from the artifact and extracts the recipient
+ * from those bytes. The dYdX/Cosmos recompute + recipient extractor is not
+ * implemented yet: its descriptors are SCAFFOLDED in src/actions.ts (artifactKind
+ * 'cosmos-msg') but FAIL CLOSED.
  *
- * Until that extractor lands, every dYdX/Cosmos action must refuse to sign rather
- * than fall back to blindly signing a caller digest (which was the #5 bug class).
- * This test pins that interim contract: all dYdX/Cosmos actions → denied.
+ * Every dYdX/Cosmos action must refuse to sign rather than blindly sign a caller
+ * digest. This test pins that contract: all dYdX/Cosmos actions → denied.
  */
 import { setup, teardown, assert, encodeRequest, type ArmoryContext } from './_harness.js'
 

@@ -26,6 +26,27 @@ decision is bound to exactly what gets signed.
 
 ---
 
+## Quickstart
+
+Node.js ≥ 18 (the `argon2` dependency builds a native addon, so a C/C++ toolchain
+must be present).
+
+```
+npm install
+cp .env.example .env          # then set EXTERNAL_WHITELIST_ADDRESS_01 in .env
+npm run init                  # generates the key + mnemonic, prints HOTSERV_PAIRING_KEY
+npm start                     # starts the daemon on the Unix socket
+```
+
+`npm run init` is the one-time startup ceremony: it writes `ARMORY_KEY` to `.env`,
+stores an encrypted BIP-39 mnemonic under `.keys/`, and prints the pairing key your
+client signs the handshake nonce with. armory refuses to start until
+`EXTERNAL_WHITELIST_ADDRESS_01` is set, so the `.env` step is mandatory. The full
+walkthrough — whitelist rationale, pairing, key rotation, and reset — is in
+[Setup](#setup).
+
+---
+
 ## What armory is for
 
 armory is **not** a Hyperliquid tool, but it **is action-aware**: to bind the
@@ -38,15 +59,6 @@ Hyperliquid EIP-712 schemas. At its core it does exactly two things:
 2. **Gates where value may go** — it only signs for a known *action type*, and for
    anything that moves funds, only to a recipient **decoded from the signed bytes**
    that satisfies a hardcoded policy a wire caller cannot override.
-
-> **Earlier framing reversed (2026-10-21).** armory used to be described as a
-> "chain-agnostic hash-signer": the caller computed the hash and asserted a
-> destination string, and armory signed the digest blindly. That left the policy
-> unbound from the signed bytes — a caller could assert a whitelisted destination
-> while handing over a hash paying an attacker (issue #5, confirmed exploitable).
-> The fix moves hash recomputation and recipient extraction **into armory** (the
-> custody device), so it is now action-aware by design. See
-> [Security properties](#security-properties).
 
 The caller still builds the artifact; armory never talks to an exchange or
 broadcasts. But armory does decode the artifact far enough to answer, provably,
@@ -179,7 +191,7 @@ Any `actionType` not in the registry is rejected with `err sign request denied`.
 **Binding status** — *bound* actions recompute the hash and extract the recipient
 in-device. *Fails closed* actions are registered (so callers see a consistent
 category) but their recompute is not yet implemented, so any sign request for them
-is refused rather than signed blindly. The Cosmos / dYdX decoder is a later phase.
+is refused rather than signed blindly. The Cosmos / dYdX decoder is not implemented yet.
 
 **auth** actions carry no external recipient. armory still recomputes the hash from
 the claimed action's schema, so a fund-moving artifact submitted under an auth
@@ -401,8 +413,7 @@ derived signer address **and** the signature.
   "artifact":
       { "kind": "evm-tx",    "unsignedTx": "0x..." }        // generic EVM (evmWithdraw / transfer)
     | { "kind": "hl-action", "action": { ...wire JSON... } }, // HL L2 EIP-712 actions
-  "destination": "0x..." | "cosmos1..." | null,             // HINT only — cross-checked, never trusted
-  "destIndex":   <number> | null                            // optional pool-membership hint
+  "destination": "0x..." | "cosmos1..." | null              // HINT only — cross-checked, never trusted
 }
 ```
 
@@ -538,17 +549,17 @@ emulator. All points were verified against the source.
     second peer neither evicts nor is detected by the first, and pairing authenticates
     possession of the pairing key, not the identity of the connecting process.
     (Documentation only; enforcing single-session / peer-cred / `0600` is a separate
-    decision, not part of the destination-binding work.)
+    decision.)
 
 Protocol-level note, true of the emulator *and* a real device: the logger emits only
 the command *name* at runtime, never arguments, artifacts, hashes, or the mnemonic;
 the only cleartext key exposure is at `init`/`rekey` (points 4, 8).
 
-> **Binding note (issue #5, fixed).** The policy is **no longer** evaluated against
-> caller-supplied strings decoupled from the signed bytes. armory recomputes the
-> signing hash from the artifact and decodes the recipient from those same bytes, so
-> the `actionType`/`destination` a caller asserts can only ever *fail* the check, not
-> smuggle a different payload past it. See [Security properties](#security-properties).
+> **Binding note.** The policy is evaluated against the signed bytes, never against
+> caller-supplied strings. armory recomputes the signing hash from the artifact and
+> decodes the recipient from those same bytes, so the `actionType`/`destination` a
+> caller asserts can only ever *fail* the check, not smuggle a different payload past
+> it. See [Security properties](#security-properties).
 
 > **This is an emulator for development and testing. It is not a hardware security
 > module and must not be relied on to protect real funds or real key material.** It

@@ -91,8 +91,7 @@ sign <signingPath> <actionType> <base64url(requestJSON)>
   "artifact":
       { "kind": "evm-tx",    "unsignedTx": "0x..." }        // unsigned on-chain EVM tx
     | { "kind": "hl-action", "action": { ...typed action... } },
-  "destination": "0x..." | null,   // HINT only — cross-checked against the extracted recipient, never trusted
-  "destIndex":   <number> | null   // optional pool re-derive index
+  "destination": "0x..." | null    // HINT only — cross-checked against the extracted recipient, never trusted
 }
 ```
 

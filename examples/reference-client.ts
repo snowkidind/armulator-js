@@ -132,7 +132,7 @@ async function main(): Promise<void> {
   console.log('derive ->', await client.send("derive m/44'/60'/0'/0/0"))
   const dest = (await client.send("derive m/44'/60'/0'/0/60")).slice(3)
 
-  // 4. A PERMITTED sign. The new wire form sends the UNSIGNED artifact, not a
+  // 4. A PERMITTED sign. The wire form sends the UNSIGNED artifact, not a
   //    digest: armory recomputes the signing hash from it and decodes the true
   //    recipient from the same bytes. Here, a native EVM transfer to an internal
   //    address. The reply is `ok <derivedSignerAddress> <signature130hex>` — a

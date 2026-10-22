@@ -1,23 +1,20 @@
 /**
- * Action descriptor registry — the action-aware core of the destination-binding
- * fix (#5). One descriptor per whitelisted actionType:
+ * Action descriptor registry — the action-aware core of destination binding.
+ * One descriptor per whitelisted actionType:
  *
  *   { category, artifactKind, recomputeHash(artifact), extractRecipient(artifact) }
  *
- * Replaces the bare ACTION_WHITELIST map that used to live in signer.ts. The
- * `category` semantics (auth / internal / transfer / withdrawal) are unchanged;
- * what is new is that each descriptor knows how to (a) recompute the signing hash
- * from the artifact the caller hands over, and (b) decode the TRUE recipient from
- * those same bytes. armory therefore binds the policy decision to the exact bytes
- * it signs, instead of trusting a caller-supplied digest + destination string.
+ * Each descriptor knows how to (a) recompute the signing hash from the artifact the
+ * caller hands over, and (b) decode the TRUE recipient from those same bytes. armory
+ * binds the policy decision to the exact bytes it signs rather than to a
+ * caller-supplied digest + destination string. Categories are auth / internal /
+ * transfer / withdrawal.
  *
- * armory is now action-aware (it owns the EVM tx decoder and the HL EIP-712
- * schemas). This is the deliberate reversal of the earlier "chain-agnostic
- * hash-signer" framing — the custody guarantee is worth it (see README).
+ * armory is action-aware: it owns the EVM tx decoder and the HL EIP-712 schemas.
  *
  * FAIL CLOSED: recomputeHash throws and extractRecipient returns null on any
- * undecodable / not-yet-implemented artifact. dYdX/Cosmos extractors are a later
- * phase — their descriptors are scaffolded here but fail closed today.
+ * undecodable artifact. dYdX/Cosmos extractors are not implemented yet — their
+ * descriptors are scaffolded here and fail closed.
  */
 import { recomputeEvmHash, extractEvmRecipient } from './evm/extract.js'
 import * as hl from './hl/typedData.js'
@@ -133,7 +130,7 @@ register('deposit',            'auth',       hlNoRecipient(hl.hashDeposit))
 register('transfer',           'transfer',   evmTx)
 register('evmWithdraw',        'withdrawal', evmTx)
 
-// ── dYdX / Cosmos (cosmos-msg) — scaffolded, fail closed (later phase) ───────────
+// ── dYdX / Cosmos (cosmos-msg) — scaffolded, fail closed (not implemented yet) ──
 register('registerAccount',           'auth',       cosmosScaffold('registerAccount'))
 register('transferOut',               'transfer',   cosmosScaffold('transferOut'))
 register('withdraw',                  'withdrawal', cosmosScaffold('withdraw'))
@@ -147,9 +144,4 @@ register('MsgWithdrawFromSubaccount', 'withdrawal', cosmosScaffold('MsgWithdrawF
 
 export function getDescriptor(actionType: string): ActionDescriptor | null {
   return REGISTRY.get(actionType) ?? null
-}
-
-/** Back-compat accessor: the action's category, or null if not whitelisted. */
-export function getCategory(actionType: string): ActionCategory | null {
-  return REGISTRY.get(actionType)?.category ?? null
 }
