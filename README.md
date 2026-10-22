@@ -41,8 +41,11 @@ npm start                     # starts the daemon on the Unix socket
 `npm run init` is the one-time startup ceremony: it writes `ARMORY_KEY` to `.env`,
 stores an encrypted BIP-39 mnemonic under `.keys/`, and prints the pairing key your
 client signs the handshake nonce with. armory refuses to start until
-`EXTERNAL_WHITELIST_ADDRESS_01` is set, so the `.env` step is mandatory. The full
-walkthrough — whitelist rationale, pairing, key rotation, and reset — is in
+`EXTERNAL_WHITELIST_ADDRESS_01` is set, so the `.env` step is mandatory.
+
+To confirm it works, run the bundled client against the daemon in a second terminal:
+`ARMORY_PAIRING_KEY=0x<pairing key from init> npm run example`. The full walkthrough
+— whitelist rationale, pairing, key rotation, reset, and verifying — is in
 [Setup](#setup).
 
 ---
@@ -270,6 +273,21 @@ key, and sends back the framed 65-byte signature. See
 > This key is derived from the mnemonic and is printed in cleartext at `init`.
 > Treat it as a secret and keep it out of version control. See
 > [Security model & limitations](#security-model--limitations).
+
+### Verify it works
+
+With the daemon running (`npm start`) and the pairing key `init` printed, run the
+bundled reference client in a second terminal:
+
+```
+ARMORY_PAIRING_KEY=0x<pairing key from init>  npm run example
+```
+
+It connects, completes the pairing handshake, then runs `status`, `derive`, a
+permitted `sign`, and a denied `sign` — a clean run confirms the whole path end to
+end. It is a single standalone file
+([`examples/reference-client.ts`](./examples/reference-client.ts)) you can read and
+port to your own software.
 
 To import an existing mnemonic instead of generating one:
 ```
