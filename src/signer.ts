@@ -37,7 +37,7 @@ export function isValidHash(hash: string): boolean {
   return HASH_RE.test(hash)
 }
 
-export function isValidDestination(dest: string): boolean {
+function isValidDestination(dest: string): boolean {
   return EVM_RE.test(dest) || COSMOS_RE.test(dest)
 }
 

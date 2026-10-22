@@ -20,7 +20,7 @@ import { logger }            from './logger.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 
-export const KEYS_DIR     = process.env.ARMORY_KEYS_DIR ?? path.resolve(__dirname, '../.keys')
+const KEYS_DIR     = process.env.ARMORY_KEYS_DIR ?? path.resolve(__dirname, '../.keys')
 export const MNEMONIC_FILE = path.join(KEYS_DIR, 'mnemonic.enc')
 
 // ── Error types ───────────────────────────────────────────────────────────────

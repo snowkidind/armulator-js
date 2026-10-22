@@ -5,7 +5,7 @@
  * Responses are either `ok <payload>` or `err <message>`.
  */
 
-export interface ParsedCommand {
+interface ParsedCommand {
   cmd:  string
   args: string[]
 }

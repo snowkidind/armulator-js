@@ -80,7 +80,7 @@ function buildConnectionId(action: unknown, nonce: number | bigint): string {
 
 const ARBITRUM_CHAIN_ID = 42161
 
-export const USER_ACTION_DOMAIN_ARBITRUM: ethers.TypedDataDomain = {
+const USER_ACTION_DOMAIN_ARBITRUM: ethers.TypedDataDomain = {
   name:              'HyperliquidSignTransaction',
   version:           '1',
   chainId:           ARBITRUM_CHAIN_ID,

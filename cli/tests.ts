@@ -53,6 +53,7 @@ const PHASES: Phase[] = [
       { key: '3.8', label: 'sign-input-validation — malformed token/path/artifact → err invalid command',  file: '3.8-sign-hash-validation.ts'   },
       { key: '3.9', label: 'sign-destination-binding — issue #5 regression: CASE A/B flip to denied',       file: '3.9-sign-destination-binding.ts' },
       { key: '3.10', label: 'sign-hl-binding       — HL recipient binding + actionType-spoof closure',      file: '3.10-sign-hl-binding.ts'       },
+      { key: '3.11', label: 'sign-deposit          — phantom-agent scheme signs the exact bytes (golden hash)', file: '3.11-sign-deposit.ts'      },
     ],
   },
   {

@@ -50,13 +50,13 @@ export function deriveAddress(mnemonic: string, path: string): string {
 }
 
 /** EVM address: keccak256(pubkey)[12:] as EIP-55 checksummed hex. */
-export function deriveEvm(mnemonic: string, path: string): string {
+function deriveEvm(mnemonic: string, path: string): string {
   const wallet = HDNodeWallet.fromPhrase(mnemonic, '', path)
   return wallet.address   // ethers returns EIP-55 checksummed
 }
 
 /** Cosmos-family address: ripemd160(sha256(compressedPubkey)) as bech32. */
-export function deriveCosmos(mnemonic: string, path: string, prefix: string): string {
+function deriveCosmos(mnemonic: string, path: string, prefix: string): string {
   const wallet     = HDNodeWallet.fromPhrase(mnemonic, '', path)
   const pubkeyBytes = Buffer.from(wallet.publicKey.slice(2), 'hex') // drop 0x
   const sha256Hash  = crypto.createHash('sha256').update(pubkeyBytes).digest()
@@ -81,7 +81,7 @@ export interface AddressPool {
  * Number of addresses derived per batch. Initial pool and each expansion
  * are always a multiple of this value.
  */
-export const POOL_BATCH_SIZE = 125
+const POOL_BATCH_SIZE = 125
 
 /**
  * Expand an existing pool in-place to cover at least minSize indices.

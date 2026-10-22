@@ -43,7 +43,7 @@ if (!process.env.ARMORY_NO_DOTENV) {
 // Dynamic imports guarantee these modules are evaluated AFTER dotenv runs,
 // so ARMORY_LOG_LEVEL and other env vars are already in process.env.
 const { logger }                               = await import('./logger.js')
-const { loadOrInitMnemonic, FatalMnemonicError, rekeyMnemonic, MNEMONIC_FILE } = await import('./mnemonic.js')
+const { loadOrInitMnemonic, FatalMnemonicError, MnemonicLoadError, rekeyMnemonic, MNEMONIC_FILE } = await import('./mnemonic.js')
 const { startServer }                          = await import('./server.js')
 const { parseCommand, ok, err }                = await import('./protocol.js')
 const { deriveAddress, buildAddressPool, expandPool, isValidPath, coinType, pathIndex } = await import('./derivation.js')
@@ -190,9 +190,16 @@ async function main(): Promise<void> {
       console.error(`Fatal: ${msg}`)
       process.exit(1)
     }
-    // Existing mnemonic.enc unreadable — run in error state; status reports it.
-    logger.error(`mnemonic load failed: ${msg}`)
-    mnemonic = null
+    if (e instanceof MnemonicLoadError) {
+      // Existing mnemonic.enc unreadable — run in error state; status reports it.
+      logger.error(`mnemonic load failed: ${msg}`)
+      mnemonic = null
+    } else {
+      // Not a known mnemonic failure — an unexpected error we did not plan for.
+      // Fail loudly rather than limp along in a degraded state that hides a bug.
+      console.error(`Fatal: unexpected error loading mnemonic: ${msg}`)
+      process.exit(1)
+    }
   }
 
   if (mnemonic) {
