@@ -1,17 +1,20 @@
 # armory (armulator-js)
 
-A JavaScript emulator of the [USB Armory](https://github.com/usbarmory/usbarmory)
-hardware security module. It implements the same IPC protocol and security
-model that the physical device exposes, allowing the rest of the system to be
-developed and tested without hardware present. When a USB Armory unit is
-available, this daemon is replaced by the device; no changes are required in
-callers.
+A Node.js crypto-wallet signing daemon for development and testing. It holds a
+BIP-39 mnemonic behind a Unix-socket IPC protocol **of this project's own
+design** and signs EVM / Hyperliquid artifacts under a hardcoded destination
+policy, so the rest of the system can be built and tested before the signer
+moves onto dedicated hardware. The long-term plan is to reimplement this daemon
+as device firmware (see
+[From emulator to hardware](#from-emulator-to-hardware)); because that firmware
+would implement this same protocol, callers would keep working unchanged.
 
-> ⚠️ **This is an emulator for development and testing — not a hardware security
-> module.** It reproduces the *interface* of the device, not its hardware
+> ⚠️ **This is a development/testing daemon — not a hardware security module.**
+> It reproduces the *interface* a hardware signer would expose, not hardware
 > security guarantees. Do not rely on it to protect real funds or real key
-> material. If you need actual security, use a real USB Armory (or equivalent
-> HSM). See [Security model & limitations](#security-model--limitations).
+> material. If you need actual security, use a real HSM or an equivalent
+> dedicated hardware signer. See
+> [Security model & limitations](#security-model--limitations).
 
 The daemon owns a BIP-39 mnemonic, derives addresses from it, and signs
 transactions on behalf of callers — while enforcing a hardcoded destination
@@ -26,21 +29,30 @@ decision is bound to exactly what gets signed.
 
 ## From emulator to hardware
 
-armulator-js is the **first step** toward a USB Armory deployment, not the final
-product. The path to a real device, in order:
+armulator-js is the **first step** toward a dedicated hardware signer, not the
+final product. The hardware we plan to target is a
+[USB armory](https://github.com/usbarmory/usbarmory) — but to be clear about
+what that means: the USB armory is open hardware that ships with **no built-in
+firmware, IPC protocol, or signing capability**. Everything described in this
+repo is our own design; the device would only ever speak this protocol because
+we flash it with firmware we wrote ourselves. Nothing here is a property or
+feature of the USB armory product.
+
+The path, in order:
 
 1. **armulator-js (here)** — decide the business logic and security model, and
    iterate on the design in plain JavaScript, without taking on the complexity of
    the hardware. The "what should the signer allow?" questions get answered and
    tested cheaply at this step.
-2. **TamaGo** — port the settled design to [TamaGo](https://github.com/usbarmory/tamago)
-   (the bare-metal Go the USB Armory runs), and test it against this emulator. Final
+2. **Custom TamaGo firmware** — port the settled design to firmware written with
+   [TamaGo](https://github.com/usbarmory/tamago) (a framework for bare-metal Go
+   on hardware such as the USB armory), and test it against this emulator. Final
    testing happens here.
-3. **USB Armory** — burn the TamaGo build onto the physical device.
+3. **Hardware** — flash that firmware onto the physical device.
 
-The emulator speaks the same IPC protocol and enforces the same security model as
-the device, so the callers you build at step 1 keep working unchanged through steps
-2 and 3 — the daemon is simply replaced by hardware.
+Because the step-2 firmware implements the same protocol defined here, the
+callers you build at step 1 keep working unchanged through steps 2 and 3 — the
+daemon is simply replaced by the device running our firmware.
 
 ---
 
@@ -260,7 +272,7 @@ The `.env` step is mandatory **by design**: armory will not run without a declar
 external withdrawal whitelist. `src/policy.ts` requires `EXTERNAL_WHITELIST_ADDRESS_01`
 and refuses to load (so both `init` and the daemon refuse to start) until you set it —
 forcing an explicit decision about where funds may be withdrawn rather than defaulting
-to something permissive. For emulator/dev use any valid EVM address is fine (see
+to something permissive. For dev use any valid EVM address is fine (see
 `.env.example`); for real use, set your actual withdrawal address.
 
 `npm run init` does all first-time setup:
@@ -480,8 +492,8 @@ Error responses:
 
 ## Security properties
 
-These are the properties the emulator enforces **against a caller on the socket** —
-i.e. within the emulator's trust boundary. They are not hardware guarantees; read
+These are the properties the daemon enforces **against a caller on the socket** —
+i.e. within the daemon's trust boundary. They are not hardware guarantees; read
 [Security model & limitations](#security-model--limitations) for where they stop.
 
 - **Mnemonic never leaves the process.** Callers send unsigned artifacts; they
@@ -517,17 +529,19 @@ i.e. within the emulator's trust boundary. They are not hardware guarantees; rea
 
 ## Security model & limitations
 
-`armory` is a **software emulator**. It speaks the same IPC protocol a real USB
-Armory would, so the rest of the system can be built and tested without hardware.
-It is **not** a security boundary. The limitations below are inherent to running
+`armory` is a **software stand-in for a future hardware signer**. The IPC
+protocol it speaks is this project's own design — the planned custom firmware
+(see [From emulator to hardware](#from-emulator-to-hardware)) would implement
+the same protocol, so the rest of the system can be built and tested without
+hardware. It is **not** a security boundary. The limitations below are inherent to running
 an HSM's job as an ordinary Unix process — they are not bugs to be fixed in the
-emulator. All points were verified against the source.
+daemon. All points were verified against the source.
 
 1. **The encryption key lives on the same disk as the data it encrypts.**
    `init` writes `ARMORY_KEY` to `.env` and the encrypted mnemonic to
    `.keys/mnemonic.enc` under the same package root, and the daemon reads the
    key back from that `.env`. Anyone who can read the project directory gets both
-   halves and can decrypt the mnemonic offline. *Real hardware:* the secret never
+   halves and can decrypt the mnemonic offline. *A real hardware signer:* the secret never
    leaves the secure element; copying the disk yields nothing.
 
 2. **Destination policy is runtime-overridable, not burned into firmware.**
@@ -535,14 +549,14 @@ emulator. All points were verified against the source.
    `ARMORY_DRAIN_ADDRESS`), and even the "default" whitelist requires
    `EXTERNAL_WHITELIST_ADDRESS_01` from the environment at load. There is no
    dev/prod gate. Anyone who can set an env var and restart the process can add a
-   withdrawal destination or drain address. *Real hardware:* these are compile-time
+   withdrawal destination or drain address. *A real hardware signer:* these are compile-time
    constants in signed firmware; changing them means reflashing the device.
 
 3. **The mnemonic is decrypted into ordinary process memory.** The plaintext
    BIP-39 phrase is held as a JS string for the life of the process and reused on
    every derivation/sign (`src/index.ts`, `src/signer.ts`, `src/derivation.ts`),
    with no locking or zeroing. Swap, core dumps, `/proc/<pid>/mem`, a debugger, or
-   a heap snapshot can expose it. *Real hardware:* keys never exist outside the
+   a heap snapshot can expose it. *A real hardware signer:* keys never exist outside the
    secure element; signing happens on-chip.
 
 4. **Pairing is a shared secret derived from the mnemonic — and printed to stdout.**
@@ -550,7 +564,7 @@ emulator. All points were verified against the source.
    `m/44'/60'/0'/0/255`, which is derived from the same mnemonic the daemon holds.
    `init` prints that key's **private key** as `HOTSERV_PAIRING_KEY=` for the
    operator to copy. It is caller authentication for dev convenience, not a
-   hardware attestation. *Real hardware:* attestation uses an on-chip key that is
+   hardware attestation. *A real hardware signer:* attestation uses an on-chip key that is
    never exported and never appears on stdout.
 
 5. **No hardware isolation, tamper resistance, secure boot, hardware RNG, or air-gap.**
@@ -587,7 +601,7 @@ emulator. All points were verified against the source.
     (Documentation only; enforcing single-session / peer-cred / `0600` is a separate
     decision.)
 
-Protocol-level note, true of the emulator *and* a real device: the logger emits only
+Protocol-level note, true of this daemon *and* the planned firmware: the logger emits only
 the command *name* at runtime, never arguments, artifacts, hashes, or the mnemonic;
 the only cleartext key exposure is at `init`/`rekey` (points 4, 8).
 
@@ -597,14 +611,14 @@ the only cleartext key exposure is at `init`/`rekey` (points 4, 8).
 > caller asserts can only ever *fail* the check, not smuggle a different payload past
 > it. See [Security properties](#security-properties).
 
-> **This is an emulator for development and testing. It is not a hardware security
+> **This is a daemon for development and testing. It is not a hardware security
 > module and must not be relied on to protect real funds or real key material.** It
 > runs the mnemonic in ordinary process memory, keeps its encryption key on the same
 > disk as the data it encrypts, enforces a policy any local operator can override
 > with an environment variable, and authenticates callers with a secret derived from
 > (and printed alongside) the mnemonic itself. If you need actual security, use a
-> real USB Armory (or an equivalent HSM) — do not deploy this emulator against real
-> value.
+> real HSM or an equivalent dedicated hardware signer — do not deploy this daemon
+> against real value.
 
 ---
 

@@ -2,7 +2,7 @@
   "name": "armory",
   "version": "0.1.0",
   "private": true,
-  "description": "A JavaScript emulator of the USB Armory hardware security module — mirrors its IPC protocol and security model so a system can be developed and tested without the physical device. For development and testing only; not a real HSM.",
+  "description": "A Node.js crypto-wallet signing daemon for development and testing — holds a BIP-39 mnemonic behind a Unix-socket IPC protocol of its own design and signs EVM/Hyperliquid artifacts under a hardcoded destination policy. A software stand-in for a planned dedicated-hardware signer. Not an HSM.",
   "license": "SEE LICENSE IN LICENSE.md",
   "homepage": "https://github.com/snowkidind/armulator-js#readme",
   "repository": {
@@ -13,9 +13,7 @@
     "url": "https://github.com/snowkidind/armulator-js/issues"
   },
   "keywords": [
-    "usb-armory",
-    "hsm",
-    "emulator",
+    "signing-daemon",
     "bip39",
     "bip32",
     "secp256k1",
