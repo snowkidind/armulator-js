@@ -3,7 +3,7 @@
  *
  * Verifies the challenge-response pairing protocol:
  *   - On connect the armory sends a 32-byte nonce (64 hex chars, framed).
- *   - The host signs it at the canonical pairing path (m/44'/60'/0'/0/255).
+ *   - The host signs it at the canonical pairing path (m/44'/60'/1'/0/0).
  *   - The armory verifies the signature against its own derived address at that path.
  *   - Only after successful pairing does the armory dispatch commands.
  *

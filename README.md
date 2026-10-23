@@ -285,12 +285,17 @@ to something permissive. For dev use any valid EVM address is fine (see
 armory is only useful with a client connecting to it. Every connection must
 complete the [pairing handshake](#connection-lifecycle): the client proves it
 holds the armory's mnemonic by signing the server's nonce with the key at
-`m/44'/60'/0'/0/255`. `init` derives that key and prints its **private key** so
-you can hand it to your client:
+`m/44'/60'/1'/0/0` — a branch deliberately disjoint from the account-0 address
+pool, so no pool index can ever land on the pairing key. `init` derives that key
+and prints its **private key** so you can hand it to your client:
 
 ```
 HOTSERV_PAIRING_KEY=0x...
 ```
+
+To reprint it later for an existing mnemonic (e.g. when wiring up a new client,
+or after the pairing path changed), run `npm run pairing-key` — read-only, same
+output, no re-init needed.
 
 Place this value in your connecting application's configuration. The name
 `HOTSERV_PAIRING_KEY` reflects the reference client (`hotserv`); if you are
@@ -388,7 +393,7 @@ length-prefix framing:
 
 1. **Server → client**: a 32-byte random nonce (64 hex chars), framed
 2. **Client → server**: a 65-byte secp256k1 signature (130 hex chars), framed.
-   The client signs the nonce with the key at `m/44'/60'/0'/0/255` derived
+   The client signs the nonce with the key at `m/44'/60'/1'/0/0` derived
    from the mnemonic. If the signature does not recover to the expected address,
    the connection is closed immediately.
 3. **Normal command exchange** begins. The server never sends an acknowledgement
@@ -561,7 +566,7 @@ daemon. All points were verified against the source.
 
 4. **Pairing is a shared secret derived from the mnemonic — and printed to stdout.**
    The handshake only proves the client can sign a nonce with the key at
-   `m/44'/60'/0'/0/255`, which is derived from the same mnemonic the daemon holds.
+   `m/44'/60'/1'/0/0`, which is derived from the same mnemonic the daemon holds.
    `init` prints that key's **private key** as `HOTSERV_PAIRING_KEY=` for the
    operator to copy. It is caller authentication for dev convenience, not a
    hardware attestation. *A real hardware signer:* attestation uses an on-chip key that is

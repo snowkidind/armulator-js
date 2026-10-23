@@ -61,7 +61,7 @@ function logTestWhitelist(value: string): void {
 
 // Canonical path used for the pairing challenge-response handshake.
 // Must match PAIRING_PATH in src/index.ts.
-const PAIRING_PATH = "m/44'/60'/0'/0/255"
+const PAIRING_PATH = "m/44'/60'/1'/0/0"
 
 // ── Sign-request helpers (destination-binding protocol) ───────────────────────
 //

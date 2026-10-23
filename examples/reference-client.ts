@@ -21,7 +21,7 @@
  *   ARMORY_PAIRING_KEY=0x...  npm run example
  *   # (HOTSERV_PAIRING_KEY is also accepted, matching the reference daemon)
  *
- * The pairing key is the PRIVATE key at m/44'/60'/0'/0/255, derived from the
+ * The pairing key is the PRIVATE key at m/44'/60'/1'/0/0, derived from the
  * same mnemonic the daemon holds. A real client only ever needs this key — not
  * the mnemonic. See README → "Connecting your software".
  */

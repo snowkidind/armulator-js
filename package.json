@@ -28,6 +28,7 @@
     "start": "tsx src/index.ts",
     "init": "tsx src/index.ts init",
     "rekey": "tsx src/index.ts rekey",
+    "pairing-key": "tsx src/index.ts pairing-key",
     "cli": "tsx cli/index.ts",
     "example": "tsx examples/reference-client.ts"
   },

@@ -5,7 +5,7 @@
  *
  * Connection lifecycle:
  *   1. Server sends a 32-byte random nonce (framed) immediately on connect.
- *   2. Client signs the nonce with the canonical pairing key (m/44'/60'/0'/0/255)
+ *   2. Client signs the nonce with the canonical pairing key (m/44'/60'/1'/0/0)
  *      and returns the 65-byte signature (framed).
  *   3. Server calls verifyPairing(nonce, sig). Mismatch → connection closed.
  *   4. Normal command dispatch begins. Sign commands are rate-limited to
